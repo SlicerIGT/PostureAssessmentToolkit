@@ -131,9 +131,46 @@ class AssessLandmarksWidget(ScriptedLoadableModuleWidget):
     # Layout within the dummy collapsible button
     self.DataFormLayout = qt.QGridLayout(DataCollapsibleButton)
     
+    # checkbox indicating working with incomplete landmark set
+    self.IncompleteLandmarksCheckbox = qt.QCheckBox()
+    self.IncompleteLandmarksCheckbox.checked = False
+    self.IncompleteLandmarksCheckbox.setToolTip("Check to display lines in 3D view showing postural abnormalities")
+    self.DataFormLayout.addWidget(qt.QLabel("Use incomplete landmarks (< T1-L5)"), 0, 0, 1, 1)
+    self.DataFormLayout.addWidget(self.IncompleteLandmarksCheckbox, 0, 1, 1, 1)
+    
+    # Healthy spine model for use with incomplete landmark set
+    self.IncompleteSpineModelSelector = slicer.qMRMLNodeComboBox()
+    self.IncompleteSpineModelSelector.nodeTypes = ["vtkMRMLModelNode",]
+    self.IncompleteSpineModelSelector.setMRMLScene( slicer.mrmlScene )
+    self.IncompleteSpineModelSelector.selectNodeUponCreation = False
+    self.IncompleteSpineModelSelector.addEnabled = False
+    self.IncompleteSpineModelSelector.removeEnabled = False
+    self.IncompleteSpineModelSelector.noneEnabled = True
+    self.IncompleteSpineModelSelector.showHidden = False
+    self.IncompleteSpineModelSelector.showChildNodeTypes = False
+    self.IncompleteSpineModelSelector.enabled = False
+    self.IncompleteSpineModelSelector.setToolTip( "Incomplete healthy spine to register to incomplete patient landmarks" )
+    self.DataFormLayout.addWidget(qt.QLabel("Incomplete spine model: "), 1, 0, 1, 1)
+    self.DataFormLayout.addWidget(self.IncompleteSpineModelSelector, 1, 1, 1, 3)
+    
+    self.IncompleteHealthyLandmaksSelector = slicer.qMRMLNodeComboBox()
+    self.IncompleteHealthyLandmaksSelector.nodeTypes = ["vtkMRMLMarkupsFiducialNode",]
+    self.IncompleteHealthyLandmaksSelector.setMRMLScene( slicer.mrmlScene )
+    self.IncompleteHealthyLandmaksSelector.selectNodeUponCreation = False
+    self.IncompleteHealthyLandmaksSelector.addEnabled = False
+    self.IncompleteHealthyLandmaksSelector.removeEnabled = False
+    self.IncompleteHealthyLandmaksSelector.noneEnabled = True
+    self.IncompleteHealthyLandmaksSelector.showHidden = False
+    self.IncompleteHealthyLandmaksSelector.showChildNodeTypes = False
+    self.IncompleteHealthyLandmaksSelector.enabled = False
+    self.IncompleteHealthyLandmaksSelector.setToolTip( "Select the markups node containing TrP landmarks along incomplete healthy model." )
+    self.DataFormLayout.addWidget(qt.QLabel("Healthy markups node: "), 2, 0, 1, 1)
+    self.DataFormLayout.addWidget(self.IncompleteHealthyLandmaksSelector, 2, 1, 1, 3)
+    
     # input volume selector
     self.MarkupsNodeSelector = slicer.qMRMLNodeComboBox()
     self.MarkupsNodeSelector.nodeTypes = ["vtkMRMLMarkupsFiducialNode",]
+    self.MarkupsNodeSelector.setMRMLScene( slicer.mrmlScene )
     self.MarkupsNodeSelector.enabled = True
     self.MarkupsNodeSelector.selectNodeUponCreation = True
     self.MarkupsNodeSelector.addEnabled = False
@@ -141,16 +178,16 @@ class AssessLandmarksWidget(ScriptedLoadableModuleWidget):
     self.MarkupsNodeSelector.noneEnabled = True
     self.MarkupsNodeSelector.showHidden = False
     self.MarkupsNodeSelector.showChildNodeTypes = False
-    self.MarkupsNodeSelector.setMRMLScene( slicer.mrmlScene )
     self.MarkupsNodeSelector.setToolTip( "Pick the input to the algorithm." )
-    self.DataFormLayout.addWidget(qt.QLabel("Selected markups node: "), 0, 0, 1, 1)
-    self.DataFormLayout.addWidget(self.MarkupsNodeSelector, 0, 1, 1, 3)
+    self.DataFormLayout.addWidget(qt.QLabel("Patient markups node: "), 3, 0, 1, 1)
+    self.DataFormLayout.addWidget(self.MarkupsNodeSelector, 3, 1, 1, 3)
 
     #
     # Connections
     #
 
     self.MarkupsNodeSelector.connect('currentNodeChanged(bool)', self.OnLandmarksNodeSelectorChanged)
+    self.IncompleteLandmarksCheckbox.connect('stateChanged(int)', self.OnIncompleteLandmarksCheckboxChecked)
     
     #
     # Visualization Interface
@@ -202,7 +239,7 @@ class AssessLandmarksWidget(ScriptedLoadableModuleWidget):
     # Generate surface visualization button
     self.GenerateVisualizationButton = qt.QPushButton("Generate Visualization")
     self.GenerateVisualizationButton.toolTip = "Produce surface visualization based on selected markups node"
-    self.GenerateVisualizationButton.enabled = False      # Wait for valid data selection first
+    self.GenerateVisualizationButton.enabled = True      # Wait for valid data selection first
     self.VisualizationFormLayout.addWidget(self.GenerateVisualizationButton, 2, 0, 1, 4)
     
     # Visualize L5 to T7 axial plane offset button
@@ -255,7 +292,7 @@ class AssessLandmarksWidget(ScriptedLoadableModuleWidget):
     self.PolyfitDegreeSpinBox.setSingleStep(1)
     self.PolyfitDegreeSpinBox.setRange(1,10)
     self.PolyfitDegreeSpinBox.value = 5
-    self.PolyfitDegreeSpinBox.setToolTip("Set point-fit polymoials' degrees")
+    self.PolyfitDegreeSpinBox.setToolTip("Set point-fit polynomials' degrees")
     self.AssessmentConfigInterfaceLayout.addWidget(qt.QLabel("Polyfit Degree"), 2, 0, 1, 1)
     self.AssessmentConfigInterfaceLayout.addWidget(self.PolyfitDegreeSpinBox, 2, 1, 1, 3)
     
@@ -291,7 +328,7 @@ class AssessLandmarksWidget(ScriptedLoadableModuleWidget):
     
     
     #
-    # Seperate reload button
+    # Separate reload button
     #
     self.ReloadButton = qt.QPushButton("Reload Module")
     self.ReloadButton.toolTip = "Reload this module, reflecting any changes in its code"
@@ -309,24 +346,29 @@ class AssessLandmarksWidget(ScriptedLoadableModuleWidget):
       self.VisualizeTranslationalDeformationButton.enabled = False
       self.AssessPostureButton.enabled  = False
       
-    else:  
-      if NewNode.GetNumberOfFiducials() < 34:
-        print "ERROR - module does not currently support incomplete TrP sets, please use PreProcessLandmarks to impute omissions, and StandardizeLandmarks to extrapolate incomplete sets"
-        return False
-        
-      if NewNode.GetNumberOfFiducials() == 34:
-        if self.logic != None:
-          self.logic = AssessLandmarksLogic(self.MarkupsNodeSelector.currentNode(), self.PolyfitDegreeSpinBox.value, int(self.PointsPerPolyFitSlider.value))
-        self.GenerateVisualizationButton.enabled = True
-        self.AssessPostureButton.enabled = True
-    
+  
+  def OnIncompleteLandmarksCheckboxChecked(self):
+    if self.IncompleteLandmarksCheckbox.isChecked():
+      self.IncompleteSpineModelSelector.enabled = True
+      self.IncompleteHealthyLandmaksSelector.enabled = True
+    else:
+      self.IncompleteSpineModelSelector.enabled = False
+      self.IncompleteHealthyLandmaksSelector.enabled = False
+      
   def OnGenerateVisualizationButtonClicked(self):
     OldVisualizationModelNode = slicer.util.getNode(self.MarkupsNodeSelector.currentNode().GetName()+"_Visualization")
     if OldVisualizationModelNode != None:
       slicer.mrmlScene.RemoveNode(OldVisualizationModelNode)
     
-    if self.logic == None:
-      self.logic = AssessLandmarksLogic(self.MarkupsNodeSelector.currentNode(), self.PolyfitDegreeSpinBox.value, int(self.PointsPerPolyFitSlider.value))
+    #if self.logic == None:
+    if self.IncompleteLandmarksCheckbox.isChecked():
+      HealthyModel = self.IncompleteSpineModelSelector.currentNode()
+      HealthyMarkupsNode = self.IncompleteHealthyLandmaksSelector.currentNode()
+    else:
+      HealthyModel = slicer.util.getNode("AverageModel")
+      HealthyMarkupsNode = slicer.util.getNode("ModelLandmarks")
+    
+    self.logic = AssessLandmarksLogic(self.MarkupsNodeSelector.currentNode(), HealthyModel, HealthyMarkupsNode, self.PolyfitDegreeSpinBox.value, int(self.PointsPerPolyFitSlider.value))  
     
     self.logic.GenerateVisualization(self.ScaleSkewSlider.value)
     slicer.mrmlScene.AddNode(self.logic.VisualizationSurfaceModel)
@@ -348,7 +390,7 @@ class AssessLandmarksWidget(ScriptedLoadableModuleWidget):
     CurrentMakupsNode = self.MarkupsNodeSelector.currentNode()
     if CurrentMakupsNode == None or slicer.util.getNode(CurrentMakupsNode.GetName()+"_Visualization") == None:
       print "ERROR - Primary visualization not found"
-      print " Not generating secondary visualiztions"
+      print " Not generating secondary visualizations"
       return False
     
     self.logic.VisualizeL5T7RadialOffset(CurrentMakupsNode)
@@ -383,14 +425,6 @@ class AssessLandmarksWidget(ScriptedLoadableModuleWidget):
       return
     #if self.logic.PatientPostureAssessment.CobbAngle
       
-
-  """
-  def onApplyButton(self):
-    logic = AssessLandmarksLogic()
-    enableScreenshotsFlag = self.enableScreenshotsFlagCheckBox.checked
-    imageThreshold = self.imageThresholdSliderWidget.value
-    logic.run(self.MarkupsNodeSelector.currentNode(), self.outputSelector.currentNode(), imageThreshold, enableScreenshotsFlag)
-  """
   def OnReloadButtonClicked(self):
     self.ClearModuleData()
     if self.logic != None:
@@ -420,17 +454,17 @@ class AssessLandmarksLogic(ScriptedLoadableModuleLogic):
       self.RmsDevAp = None
       
       
-  def __init__(self, MarkupsNode, PolyDegree, PointsPerInterval):
+  def __init__(self, MarkupsNode, HealthyModel, HealthyMarkupsNode, PolyDegree, PointsPerInterval):
     self.PatientMarkupsNode = MarkupsNode
     
     # PostureAsssessment, for convenient storage of posture metrics
     self.PatientPostureAssessment = self.PostureAsssessment()
     
     # Average-model anatomy to register to patient anatomy
-    self.ModelMarkupsNode = slicer.util.getNode("ModelLandmarks")
-    self.AverageSpineSurfaceModel = slicer.util.getNode("AverageModel")
+    self.ModelMarkupsNode = HealthyMarkupsNode
+    self.AverageSpineSurfaceModel = HealthyModel
     
-    # A model markups node which can be scaled to patient size seperately from the visualization registration for quantitative assessement
+    # A model markups node which can be scaled to patient size separately from the visualization registration for quantitative assessment
     ScaledMarkupsNode = slicer.vtkMRMLMarkupsFiducialNode()
     ScaledMarkupsNode.Copy(self.ScaleModelToPatient(self.ModelMarkupsNode, self.PatientMarkupsNode, PolyDegree, PointsPerInterval))
     
@@ -445,15 +479,6 @@ class AssessLandmarksLogic(ScriptedLoadableModuleLogic):
     PolyData.DeepCopy(self.AverageSpineSurfaceModel.GetPolyData())
     self.VisualizationSurfaceModel.SetAndObservePolyData(PolyData)
     self.VisualizationSurfaceModel.SetName(self.PatientMarkupsNode.GetName() + "_Visualization")
-    
-    """
-    # Models require distinct  display nodes
-    dn = slicer.vtkMRMLModelDisplayNode()
-    self.VisualizationSurfaceModel.SetAndObserveDisplayNodeID(dn.GetID())
-    self.VisualizationSurfaceModel.SetDisplayVisibility(0)
-    """
-    
-    #self.VisualizationSurfaceModel.Copy(self.AverageSpineSurfaceModel)
     
     # GlyphMarkupsNode to store location(s) to display transform glyphs
     self.L5T7RadialVectorGlyphNode = slicer.vtkMRMLMarkupsFiducialNode()
@@ -573,7 +598,7 @@ class AssessLandmarksLogic(ScriptedLoadableModuleLogic):
     ScaledModelMarkupsNode = slicer.vtkMRMLMarkupsFiducialNode()
     ScaledModelMarkupsNode.SetName("AvgModel for " + PatientNode.GetName())
     
-    # Shift all AvgModel markup points towards center of their polynomial curve by amount proportioanl to their distance from it and the scaling needed
+    # Shift all AvgModel markup points towards center of their polynomial curve by amount proportional to their distance from it and the scaling needed
     ModelCenterSiCoords = self.MoveCoordsAlongCurve(UnscaledModelBaseCenterCoords, ModelPolynomials, ModelPolynomialCurveLength/2.0, PointsPerPolyFit, 1)
     TopPointDistFromCenter = self.GetCurveLength(ModelPolynomials, UnscaledModelTopCenterCoords, ModelCenterSiCoords, PointsPerPolyFit)
     BottomPointDistFromCenter = self.GetCurveLength(ModelPolynomials, ModelCenterSiCoords, UnscaledModelBaseCenterCoords, PointsPerPolyFit)
@@ -691,13 +716,6 @@ class AssessLandmarksLogic(ScriptedLoadableModuleLogic):
     self.VisualizationSurfaceModel.SetAndObservePolyData(PolyData)
     self.VisualizationSurfaceModel.SetName(self.PatientMarkupsNode.GetName() + "_Visualization")
     
-    """
-    # Models require distinct  display nodes
-    dn = slicer.vtkMRMLModelDisplayNode()
-    dn.SetVisibility(1)
-    self.VisualizationSurfaceModel.SetAndObserveDisplayNodeID(dn.GetID())
-    """
-    
     PatientLabelsCoords = [[self.PatientMarkupsNode.GetNthFiducialLabel(i), self.PatientMarkupsNode.GetMarkupPointVector(i,0)] for i in range(self.PatientMarkupsNode.GetNumberOfFiducials())]
     ModelLabelsCoords = [[self.ModelMarkupsNode.GetNthFiducialLabel(i), self.ModelMarkupsNode.GetMarkupPointVector(i,0)] for i in range(self.ModelMarkupsNode.GetNumberOfFiducials())]
     
@@ -709,7 +727,7 @@ class AssessLandmarksLogic(ScriptedLoadableModuleLogic):
       AnchorPointCoords = [(ModelPointCoords[dim] + AnchorOffsetVector[dim]) for dim in range(3)]
       ModelLabelsCoords.append([ModelPointLabel, AnchorPointCoords])
     
-   # Add achor points to each of the patient landmarks
+   # Add anchor points to each of the patient landmarks
     for i, (PatientPointLabel, PatientPointCoords) in enumerate(PatientLabelsCoords):
       if i == self.PatientMarkupsNode.GetNumberOfFiducials():
         break
@@ -717,7 +735,6 @@ class AssessLandmarksLogic(ScriptedLoadableModuleLogic):
       AnchorPointCoords = [(PatientPointCoords[dim] + AnchorOffsetVector[dim]) for dim in range(3)]
       PatientLabelsCoords.append([PatientPointLabel, AnchorPointCoords])
 
-    
     # Create Markups Nodes for anchored landmark sets
     ModelRegistrationMarkupsNode = slicer.vtkMRMLMarkupsFiducialNode()
     for i, (Label, Coords) in enumerate(ModelLabelsCoords):
@@ -739,20 +756,6 @@ class AssessLandmarksLogic(ScriptedLoadableModuleLogic):
 
     for PointIndex in range(PatientRegistrationMarkupsNode.GetNumberOfFiducials()):
       PatientLabelsCoords[PointIndex][1] = PatientRegistrationMarkupsNode.GetMarkupPointVector(PointIndex, 0)
-      
-    """
-    OldModelPointsNode = slicer.util.getNode("MRP")
-    if OldModelPointsNode != None:
-      slicer.mrmlScene.RemoveNode(OldModelPointsNode)
-    slicer.mrmlScene.AddNode(ModelRegistrationMarkupsNode)
-    ModelRegistrationMarkupsNode.SetName("MRP")
-      
-    OldPatientPointsNode = slicer.util.getNode("PRP")
-    if OldPatientPointsNode != None:
-      slicer.mrmlScene.RemoveNode(OldPatientPointsNode)
-    slicer.mrmlScene.AddNode(PatientRegistrationMarkupsNode)
-    PatientRegistrationMarkupsNode.SetName("PRP")
-    """
     
     # Instantiate vtk counterparts to mrmlScene objects for thinplatespline registration
     ModelVtkCoords = vtk.vtkFloatArray()
@@ -789,7 +792,7 @@ class AssessLandmarksLogic(ScriptedLoadableModuleLogic):
     return True
     
   def GetAnchorOffsetVector(self, MarkupsNode, PointIndex):
-    # This is becomming disorganized - TODO: COme up with systematic way for applying geometry corrections
+    # This is becoming disorganized - TODO: COme up with systematic way for applying geometry corrections
     #LabelsCoords = [(MarkupsNode.GetNthFiducialLabel(i), MarkupsNode.GetMarkupPointVector(i,0)) for i in range(MarkupsNode.GetNumberOfFiducials())]
     LateralVector = self.GetLateralVector(MarkupsNode, PointIndex)
     LateralVectorNorm = np.linalg.norm(LateralVector)
@@ -812,7 +815,6 @@ class AssessLandmarksLogic(ScriptedLoadableModuleLogic):
       UnscaledAnteriorVector = [(-1*UnscaledAnteriorVector[dim]) for dim in range(3)]
       
     # Scale UnscaledAnteriorVector
-    #AnchorOffsetScale = np.linalg.norm(AxialVector)
     AnchorOffsetScale = (self.GetSpineLength(MarkupsNode)/(MarkupsNode.GetNumberOfFiducials()/2))
     
     UnscaledAnteriorVectorNorm = np.linalg.norm(UnscaledAnteriorVector)
@@ -1116,11 +1118,6 @@ class AssessLandmarksLogic(ScriptedLoadableModuleLogic):
       self.VisualizeCobbAngle(Node, CobbEstimate, MaxNegAngleIndex, MaxPosAngleIndex)
     
     return True
-    
-  def GetCobbFromCurve(self, RlPolynomial, PostureAssessment):
-   # NOT IMPLEMENTED
-   return True
-   
    
   def GetCenterlinePlumblineDeviationMetrics(self, Node, CongruentAverageNode, PostureAssessment, PolyDegree, PointsPerPolyFit, DoVisualizeMetrics):
     # Get reference and patient anatomic polyfits
