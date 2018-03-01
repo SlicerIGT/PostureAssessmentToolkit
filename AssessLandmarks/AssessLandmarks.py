@@ -748,6 +748,7 @@ class AssessLandmarksLogic(ScriptedLoadableModuleLogic):
 
     # DEBUG
     #slicer.mrmlScene.AddNode(PatientRegistrationMarkupsNode)
+    #slicer.mrmlScene.AddNode(ModelRegistrationMarkupsNode)
       
     # Try correcting for lateral-anterior skew
     SkewAngle = ScaleSkew * 90.0
@@ -1265,7 +1266,7 @@ class AssessLandmarksLogic(ScriptedLoadableModuleLogic):
     #dn.SetColor([0,1,0])
     
   def GetSpineLength(self, Node):
-    # Uses Pythagorus, point to point along each side, and averages both sides' curves
+    # Uses Pythagoras, point to point along each side, and averages both sides' curves
     LeftRightCoords = [(Node.GetMarkupPointVector(point,0), Node.GetMarkupPointVector(point+1,0)) for point in range(0,Node.GetNumberOfFiducials(),2)]
     NumVertebra = len(LeftRightCoords)
     LengthSummation = 0

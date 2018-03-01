@@ -1420,7 +1420,7 @@ class RepairLandmarksLogic(ScriptedLoadableModuleLogic):
       # Normalize S-I dimension to R-L scale
       for i, Point in enumerate(PointSet):
         Coords = Point[1]
-        NormalizedPoints[i] = np.array([Coords[0], (Coords[1]) * (SetWidth / (SetDepth * 3.0)), (Coords[2]) * (SetWidth / (SetHeight * 2.0))])
+        NormalizedPoints[i] = np.array([Coords[0], (Coords[1]) * (SetWidth / (SetDepth)), (Coords[2]) * (SetWidth / (SetHeight))])
       return NormalizedPoints
     
     def ShouldStopKMeans(self, oldCentroids, Centroids, iterations):
