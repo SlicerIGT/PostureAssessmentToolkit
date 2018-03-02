@@ -166,7 +166,7 @@ class UsSurfaceToLandmarksWidget(ScriptedLoadableModuleWidget):
     self.DuplicateMisdirectionThresholdSlider.singleStep = 0.1
     self.DuplicateMisdirectionThresholdSlider.minimum = 0
     self.DuplicateMisdirectionThresholdSlider.maximum = 90
-    self.DuplicateMisdirectionThresholdSlider.value = 50
+    self.DuplicateMisdirectionThresholdSlider.value = 45
     self.DuplicateMisdirectionThresholdSlider.setToolTip("Set the angle threshold for interpoint direction to be considered as resulting from landmark duplication")
     self.DataConfigInterfaceGridLayout.addWidget(qt.QLabel("Duplication misdirection"), 7, 0, 1, 1)
     self.DataConfigInterfaceGridLayout.addWidget(self.DuplicateMisdirectionThresholdSlider, 7, 1, 1, 3)
@@ -853,7 +853,7 @@ class UsSurfaceToLandmarksLogic(ScriptedLoadableModuleLogic):
     return LandmarksMarkupsNode
 
   def ConsolidateDuplicateLandmarks(self, MarkupsNode, DuplicateMisdirectionThreshold):
-    # Use PreProcessLandmarksWidget to seperate landmarks into left and right sides
+    # Uses PreProcessLandmarksWidget to separate landmarks into left and right sides
     slicer.modules.preprocesslandmarks.widgetRepresentation()
     pplWidget = slicer.modules.PreProcessLandmarksWidget
     pplWidget.SingleNodeSelector.setCurrentNode(MarkupsNode)
@@ -863,11 +863,11 @@ class UsSurfaceToLandmarksLogic(ScriptedLoadableModuleLogic):
     
     # Identify and un-select each side's duplicates from local inter-point directionality
     for Point in range(LeftMarkups.GetNumberOfFiducials()-1):
-      if self.IsPointDuplicateFromDirection(LeftMarkups, Point+1, DuplicateMisdirectionThreshold):
+      if self.IsPointPairDuplicateFromDirection(LeftMarkups, Point, Point+1, DuplicateMisdirectionThreshold):
         LeftMarkups.SetNthFiducialSelected(Point,False)
         LeftMarkups.SetNthFiducialSelected(Point+1,False)
     for Point in range(RightMarkups.GetNumberOfFiducials()-1):
-      if self.IsPointDuplicateFromDirection(RightMarkups, Point+1, DuplicateMisdirectionThreshold):
+      if self.IsPointPairDuplicateFromDirection(RightMarkups, Point, Point+1, DuplicateMisdirectionThreshold):
         RightMarkups.SetNthFiducialSelected(Point,False)
         RightMarkups.SetNthFiducialSelected(Point+1,False)
 
@@ -895,41 +895,41 @@ class UsSurfaceToLandmarksLogic(ScriptedLoadableModuleLogic):
     
     return ConsolidatedMarkupsNode
  
-  def IsPointDuplicateFromDirection(self, MarkupsNode, Index, DuplicateMisdirectionThreshold):
-    CurrentCoords = MarkupsNode.GetMarkupPointVector(Index-1,0 )
-    CandidateDuplicateCoords = MarkupsNode.GetMarkupPointVector(Index, 0)
-    InterCandidateDirection = [CurrentCoords[dim] - CandidateDuplicateCoords[dim] for dim in range(3)]
-    AverageCandidateLocation = [(CurrentCoords[dim] + CandidateDuplicateCoords[dim])/2.0 for dim in range(3)]
-    # Boundary conditions are when Index = 1 or Index = MarkupsNode.GetNumberOfFiducials()-2
-    if Index == 1:
-      FirstCoordsBelow = MarkupsNode.GetMarkupPointVector(Index+1, 0)
-      #SecondCoordsBelow = MarkupsNode.GetMarkupPointVector(Index+2)
-      ReferenceDirection = [FirstCoordsBelow[dim] + AverageCandidateLocation[dim] for dim in range(3)]
-      #CompareDirection1 = [AverageCandidateLocation[dim] - FirstCoordsBelow[dim] for dim in range(3)]
-      #CompareDirection2 = [AverageCandidateLocation[dim] - SecondCoordsBelow[dim] for dim in range(3)]
-    elif Index == MarkupsNode.GetNumberOfFiducials()-2:
-      FirstCoordsAbove = MarkupsNode.GetMarkupPointVector(Index-2, 0)
-      #SecondCoordsAbove = MarkupsNode.GetMarkupPointVector(Index-3)
-      ReferenceDirection = [FirstCoordsAbove[dim] - AverageCandidateLocation[dim] for dim in range(3)]
-      #CompareDirection1 = [AverageCandidateLocation[dim] - FirstCoordsAbove[dim] for dim in range(3)]
-      #CompareDirection2 = [AverageCandidateLocation[dim] - SecondCoordsAbove[dim] for dim in range(3)]
+  def IsPointPairDuplicateFromDirection(self, MarkupsNode, Point1Index, Point2Index, DuplicateMisdirectionThreshold):
+    # Get coords from both candidates of duplicate pair - MarkupsNode[Index] and MarkupsNode[Index+1]
+    Candidate1Coords = MarkupsNode.GetMarkupPointVector(Point1Index, 0)
+    Candidate2Coords = MarkupsNode.GetMarkupPointVector(Point2Index, 0)
+    
+    # Compute inter-candidate direction, to compare to reference direction
+    InterCandidateDirection = [Candidate1Coords[dim] - Candidate2Coords[dim] for dim in range(3)]
+    #AverageCandidateLocation = [(CurrentCoords[dim] + CandidateDuplicateCoords[dim])/2.0 for dim in range(3)]
+    
+    # Get coords of points above and below candidate pair, or deal with boundary conditions, for reference direction
+    
+    if Point1Index == 0:    # Boundary condition when there is no point above candidate pair, use top point for reference
+      TopCoords = Candidate1Coords
+      PointBelowPairCoords = MarkupsNode.GetMarkupPointVector(Point2Index+1, 0)
+      ReferenceDirection = [TopCoords[dim] - PointBelowPairCoords[dim] for dim in range(3)]
       
-    else:
-      CoordsAbove = MarkupsNode.GetMarkupPointVector(Index-2, 0)
-      CoordsBelow = MarkupsNode.GetMarkupPointVector(Index+1, 0)
-      ReferenceDirection = [CoordsBelow[dim] - CoordsAbove[dim] for dim in range(3)]
-      #CompareDirection1 = [AverageCandidateLocation[dim] - CoordsAbove[dim] for dim in range(3)]
-      #CompareDirection2 = [AverageCandidateLocation[dim] - CoordsBelow[dim] for dim in range(3)]
+    elif Point2Index == MarkupsNode.GetNumberOfFiducials()-1: # Boundary condition when there is no point below candidate pair
+      BottomCoords = Candidate2Coords
+      PointAbovePairCoords = MarkupsNode.GetMarkupPointVector(Point1Index-1, 0)
+      ReferenceDirection = [PointAbovePairCoords[dim] - BottomCoords[dim] for dim in range(3)]
       
+    else:                   # No boundary, can use point above and below candidate pair for reference direction
+      PointAbovePairCoords = MarkupsNode.GetMarkupPointVector(Point1Index-1, 0)
+      PointBelowPairCoords = MarkupsNode.GetMarkupPointVector(Point2Index+1, 0)
+      ReferenceDirection = [PointAbovePairCoords[dim] - PointBelowPairCoords[dim] for dim in range(3)]
+      
+    # Compute angle between InterCandidateDirection and ReferenceDirection as measure of deviation from axial symmetry
     AngleRad = np.math.acos(np.dot(ReferenceDirection, InterCandidateDirection)/ (np.linalg.norm(ReferenceDirection)*np.linalg.norm(InterCandidateDirection)))
     AngleDeg = AngleRad * 180.0 / np.pi
-    Metric = min(180 - AngleDeg, AngleDeg)
-    # If the angle between InterCandidateDirection and ReferenceDiretion is large, we have probably found a duplicate
-    print "Angle between " + MarkupsNode.GetName() + " node's " + MarkupsNode.GetNthFiducialLabel(Index-1) + "->" + MarkupsNode.GetNthFiducialLabel(Index) + " vector" + \
-      " and contextual direction: "
-    print " " + str(AngleDeg) + " - Metric: " + str(Metric)
     
-    if Metric > DuplicateMisdirectionThreshold:
+    # If the angle between InterCandidateDirection and ReferenceDiretion is large, we have probably found a duplicate
+    print "Angle between " + MarkupsNode.GetNthFiducialLabel(Point1Index) + " and " + MarkupsNode.GetNthFiducialLabel(Point2Index) \
+      + " candidate pair and reference direction: " + str(AngleDeg)
+    
+    if AngleDeg > DuplicateMisdirectionThreshold:
       print " Duplicate detected!"
       return True
     else:
