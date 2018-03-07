@@ -808,22 +808,23 @@ class UsSurfaceToLandmarksLogic(ScriptedLoadableModuleLogic):
     
     #print "DEBUG - vtkKMeansStatistics initialized"
     
-    # Iteratively try increasing cluster numbers up to 34, requiring a minimum of 6 landmarks
+    # Iteratively try increasing cluster numbers up to 34
     MinErr = 9999999999         # LargeNumber
-    BestK = 6
-    for k in range(6,35):
+    BestK = 1
+    for k in range(1,35):
       km.SetDefaultNumberOfClusters(k)
       km.Update()
       # Get cluster centers
       
       OutMetaDS = vtk.vtkMultiBlockDataSet.SafeDownCast(km.GetOutputDataObject(vtk.vtkStatisticsAlgorithm.OUTPUT_MODEL))
-      #print OutMetaDS
       OutMetaTable = vtk.vtkTable.SafeDownCast(OutMetaDS.GetBlock(1))
+      #  DEBUGGING INFO
+      #print OutMetaDS
       #print OutMetaTable
       
       ErCol = OutMetaTable.GetColumn(3)
-      #ErAr = Rd.GetArray(3)
-      #Er = abs(ErCol.GetValue(0))
+      
+      # Error metric is usual k-means metric multiplied by k to as larger landmark sets will always have smaller average error
       Er = k*abs(ErCol.GetValue(0))     
       print "Landmark generation error with k = " + str(k) + " means: " + str(Er) 
       
@@ -861,37 +862,39 @@ class UsSurfaceToLandmarksLogic(ScriptedLoadableModuleLogic):
     LeftMarkups = pplWidget.LeftSideSelector.currentNode()
     RightMarkups = pplWidget.RightSideSelector.currentNode()
     
-    # Identify and un-select each side's duplicates from local inter-point directionality
+    # Identify and merge each side's duplicates from local inter-point directionality
     for Point in range(LeftMarkups.GetNumberOfFiducials()-1):
       if self.IsPointPairDuplicateFromDirection(LeftMarkups, Point, Point+1, DuplicateMisdirectionThreshold):
         LeftMarkups.SetNthFiducialSelected(Point,False)
         LeftMarkups.SetNthFiducialSelected(Point+1,False)
+        LeftMarkups = self.GetMergeMarkupsUnselectedPointGroups(LeftMarkups)
     for Point in range(RightMarkups.GetNumberOfFiducials()-1):
       if self.IsPointPairDuplicateFromDirection(RightMarkups, Point, Point+1, DuplicateMisdirectionThreshold):
         RightMarkups.SetNthFiducialSelected(Point,False)
         RightMarkups.SetNthFiducialSelected(Point+1,False)
+        RightMarkups = self.GetMergeMarkupsUnselectedPointGroups(RightMarkups)
 
     # Retrieve nodes with directionally identified duplicates merged
-    DirectionallyMergedLeftNode = self.GetMergeMarkupsUnselectedPointGroups(LeftMarkups)
-    DirectionallyMergedRightNode = self.GetMergeMarkupsUnselectedPointGroups(RightMarkups)
+    #DirectionallyMergedLeftNode = self.GetMergeMarkupsUnselectedPointGroups(LeftMarkups)
+    #DirectionallyMergedRightNode = self.GetMergeMarkupsUnselectedPointGroups(RightMarkups)
     
+    """
     # Identify and un-select each sides duplicates based on inter-point distances
-    for Point in range(DirectionallyMergedLeftNode.GetNumberOfFiducials()):
-      if self.IsPointDuplicateFromDistance(DirectionallyMergedLeftNode, Point):
-        DirectionallyMergedLeftNode.SetNthFiducialSelected(Point,False)
-    for Point in range(DirectionallyMergedRightNode.GetNumberOfFiducials()):
-      if self.IsPointDuplicateFromDistance(DirectionallyMergedRightNode, Point):
-        DirectionallyMergedRightNode.SetNthFiducialSelected(Point,False)
+    for Point in range(LeftMarkups.GetNumberOfFiducials()):
+      if self.IsPointDuplicateFromDistance(LeftMarkups, Point):
+        LeftMarkups.SetNthFiducialSelected(Point,False)
+    for Point in range(RightMarkups.GetNumberOfFiducials()):
+      if self.IsPointDuplicateFromDistance(RightMarkups, Point):
+        RightMarkups.SetNthFiducialSelected(Point,False)
         
     SpatiallyMergedLeftNode = self.GetMergeMarkupsUnselectedPointGroups(DirectionallyMergedLeftNode)
     SpatiallyMergedRightNode = self.GetMergeMarkupsUnselectedPointGroups(DirectionallyMergedRightNode)
+    """
     
-    ConsolidatedMarkupsNode = self.RecombineLeftRightMarkups(SpatiallyMergedLeftNode, SpatiallyMergedRightNode)
+    ConsolidatedMarkupsNode = self.RecombineLeftRightMarkups(LeftMarkups, RightMarkups)
     pplWidget.SingleNodeSelector.setCurrentNode(None)
     slicer.mrmlScene.RemoveNode(MarkupsNode)
     slicer.util.reloadScriptedModule('PreProcessLandmarks')
-    #slicer.mrmlScene.AddNode(SpatiallyMergedLeftNode)
-    #slicer.mrmlScene.AddNode(SpatiallyMergedRightNode)
     
     return ConsolidatedMarkupsNode
  
