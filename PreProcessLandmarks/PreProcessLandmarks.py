@@ -277,6 +277,17 @@ class PreProcessLandmarksWidget(ScriptedLoadableModuleWidget):
     self.RepairConfigInterfaceLayout.addWidget(qt.QLabel("Imputation specificity"), 5, 0, 1, 1)
     self.RepairConfigInterfaceLayout.addWidget(self.ImputationSpecificitySlider, 5, 1, 1, 3)
     
+    # Slider widget to configure how sensitive outlier detection is
+    self.OutlierDetectionSensitivitySlider = ctk.ctkSliderWidget()
+    self.OutlierDetectionSensitivitySlider.singleStep = 1
+    self.OutlierDetectionSensitivitySlider.setToolTip("Sets value for angle compared to vectors into, out of, and across points to determine if its an outlier")
+    self.OutlierDetectionSensitivitySlider.enabled = True
+    self.OutlierDetectionSensitivitySlider.minimum = 0
+    self.OutlierDetectionSensitivitySlider.maximum = 90
+    self.OutlierDetectionSensitivitySlider.value = 30
+    self.RepairConfigInterfaceLayout.addWidget(qt.QLabel("Outlier angle threshold"), 6, 0, 1, 1)
+    self.RepairConfigInterfaceLayout.addWidget(self.OutlierDetectionSensitivitySlider, 6, 1, 1, 3)
+    
     self.RepairConfigInterfaceLayout.addWidget(qt.QLabel(""))
 
     #*********Connections*********#
@@ -405,11 +416,6 @@ class PreProcessLandmarksWidget(ScriptedLoadableModuleWidget):
     self.RepairInterfaceLayout.addWidget(self.UndoButton, 12, 0, 1, 4)
     """
    
-    self.IdentifyOutliersButton = qt.QPushButton("Identify Outliers")
-    self.IdentifyOutliersButton.toolTip = "Highlight apparent outlier points in selected side"
-    self.IdentifyOutliersButton.enabled = True
-    self.RepairInterfaceLayout.addWidget(self.IdentifyOutliersButton, 12, 0, 1, 2)
-    
     self.RemoveOutliersButton = qt.QPushButton("Remove Outliers")
     self.RemoveOutliersButton.toolTip = "Remove points highlighted as outliers by Remove Outliers"
     self.RemoveOutliersButton.enabled = True
@@ -456,7 +462,6 @@ class PreProcessLandmarksWidget(ScriptedLoadableModuleWidget):
     self.RemovePointButton.connect('clicked(bool)', self.OnRemovePointButton)
     self.RemovePointButton.connect('clicked(bool)', self.OnLeftRightBasePatchChange)
     
-    self.IdentifyOutliersButton.connect('clicked(bool)', self.OnIdentifyOutliersButton)
     self.RemoveOutliersButton.connect('clicked(bool)', self.OnRemoveOutliersButton)
     
     self.TrimToCorrespondenceButton.connect('clicked(bool)', self.OnTrimToCorrespondenceButton)
@@ -905,50 +910,14 @@ class PreProcessLandmarksWidget(ScriptedLoadableModuleWidget):
     
     return
     
-  def OnIdentifyOutliersButton(self):
-    
-    # Get node to be searched for outliers
-    OldWorkingNode = self.RepairSideSelector.currentNode()
-    
-    if OldWorkingNode.GetName().__contains__("Left"):
-      # Get node with suspected outliers highlighted (unselected)
-      NewWorkingNode = self.logic.PatientModel.LeftSide.IdentifyOutliers()
-      
-      # Update scene
-      slicer.mrmlScene.RemoveNode(OldWorkingNode)
-      #OldWorkingNode.Copy(NewWorkingNode)
-      slicer.mrmlScene.AddNode(NewWorkingNode)
-      NewWorkingNode.CreateDefaultDisplayNodes()
-      
-      # Update UI
-      self.RepairSideSelector.setCurrentNode(NewWorkingNode)
-      self.LeftSideSelector.setCurrentNode(NewWorkingNode)
-      
-    else:
-      # Get node with suspected outliers highlighted (unselected)
-      NewWorkingNode = self.logic.PatientModel.RightSide.IdentifyOutliers()
-      
-      # Update scene
-      slicer.mrmlScene.RemoveNode(OldWorkingNode)
-      #OldWorkingNode.Copy(NewWorkingNode)
-      slicer.mrmlScene.AddNode(NewWorkingNode)
-      NewWorkingNode.CreateDefaultDisplayNodes()
-      
-      # Update UI
-      self.RepairSideSelector.setCurrentNode(NewWorkingNode)
-      self.RightSideSelector.setCurrentNode(NewWorkingNode)
-
-    self.UpdateColors()
-    
-    return
-    
   def OnRemoveOutliersButton(self):
+    
     # Get node to be searched for outliers
     OldWorkingNode = self.RepairSideSelector.currentNode()
     
     if OldWorkingNode.GetName().__contains__("Left"):
-      # Get node with suspected outliers highlighted (unselected)
-      NewWorkingNode = self.logic.PatientModel.LeftSide.DeleteIdentifiedOutliers()
+      # Get node with outliers removed)
+      NewWorkingNode = self.logic.PatientModel.LeftSide.RemoveOutliers(self.OutlierDetectionSensitivitySlider.value)
       
       # Update scene
       slicer.mrmlScene.RemoveNode(OldWorkingNode)
@@ -961,8 +930,8 @@ class PreProcessLandmarksWidget(ScriptedLoadableModuleWidget):
       self.LeftSideSelector.setCurrentNode(NewWorkingNode)
       
     else:
-      # Get node with suspected outliers highlighted (unselected)
-      NewWorkingNode = self.logic.PatientModel.RightSide.DeleteIdentifiedOutliers()
+      # Get node with outliers removed)
+      NewWorkingNode = self.logic.PatientModel.RightSide.RemoveOutliers(self.OutlierDetectionSensitivitySlider.value)
       
       # Update scene
       slicer.mrmlScene.RemoveNode(OldWorkingNode)
@@ -975,8 +944,9 @@ class PreProcessLandmarksWidget(ScriptedLoadableModuleWidget):
       self.RightSideSelector.setCurrentNode(NewWorkingNode)
 
     self.UpdateColors()
-
+    
     return
+    
     
   def OnTrimToCorrespondenceButton(self):
     # Get node
@@ -2274,79 +2244,44 @@ class RepairLandmarksLogic(ScriptedLoadableModuleLogic):
       
       return self.PatchNode
    
-    def IdentifyOutliers(self):     # self.MarkupsNode remains the same EXCEPT that points identified as outliers are UNSELECTED
+    def RemoveOutliers(self, AngleThreshold):     # self.MarkupsNode remains the same EXCEPT that points identified as outliers are UNSELECTED
       #from np import math
-      LabelsCoords = [(self.MarkupsNode.GetNthFiducialLabel(i), self.MarkupsNode.GetMarkupPointVector(i,0)) for i in range(self.MarkupsNode.GetNumberOfFiducials())]
+      #LabelsCoords = [(self.MarkupsNode.GetNthFiducialLabel(i), self.MarkupsNode.GetMarkupPointVector(i,0)) for i in range(self.MarkupsNode.GetNumberOfFiducials())]
       
-      # Polynomial curve fit to see which points deviate the most
-      (SrPolynomial, SaPolynomial) = self.CoordsPolyFit()
-      
-      RlFitSqErrors = []
-      ApFitSqErrors = []
-      print " R-L  - A-P"
-      print "" 
-      
-      print "Polynomial fit errors"
-      for PointIndex in range(self.MarkupsNode.GetNumberOfFiducials()):
-        CurrentPointCoords = self.MarkupsNode.GetMarkupPointVector(PointIndex,0)
-        RlFitSqErrors.append((CurrentPointCoords[0] - SrPolynomial(CurrentPointCoords[2]))**2)
-        ApFitSqErrors.append((CurrentPointCoords[1] - SaPolynomial(CurrentPointCoords[2]))**2)
-        print RlFitSqErrors[-1], "  ", ApFitSqErrors[-1]
-   
-      print "Mean: ", np.mean(RlFitSqErrors), " - ", np.mean(ApFitSqErrors) 
-      print "StdDev: ", np.std(RlFitSqErrors), "  - ", np.std(ApFitSqErrors)
-      print ""
-   
-      # Try local inter-landmark vector direction changes
-      RsAngles = []
-      AsAngles = []
-      sVector = [0.0,0.0,1.0]    # For angle measurment with cross-product
-      
-      print "Inter-landmark angles (relative to vertical)"
-      for i, LabelCoords in enumerate(LabelsCoords[1:], start=1):
-        #InterLandmarkVector = [0.0,0.0,0.0]
-        RsVector = [(LabelsCoords[i-1][1][0] - LabelCoords[1][0]), 0.0, (LabelsCoords[i-1][1][2] - LabelCoords[1][2])]
-        AsVector = [0.0, (LabelsCoords[i-1][1][1] - LabelCoords[1][1]), (LabelsCoords[i-1][1][2] - LabelCoords[1][2])]
-        RsDot = np.dot(RsVector, sVector) / np.linalg.norm(RsVector)
-        AsDot = np.dot(AsVector, sVector) / np.linalg.norm(AsVector)
-        RsAngle = np.math.acos(RsDot) * np.sign(RsVector[0])
-        AsAngle = np.math.acos(AsDot) * np.sign(AsVector[1])
-        RsAngles.append(RsAngle)
-        AsAngles.append(AsAngle)
-        print RsAngle, "  ", AsAngle
-        
-      print "Mean (of abs): ", np.mean([abs(Angle) for Angle in RsAngles]), "  - ", np.mean([abs(Angle) for Angle in AsAngles])
-      print "StdDev: ", np.std(RsAngles), " - ", np.std(AsAngles)
-      
-      # Check angle/fit criteria for outlier identification
-      for i, ((RlFitSqError, ApFitSqError),(RsAngle, AsAngle)) in enumerate(zip(zip(RlFitSqErrors, ApFitSqErrors), zip(RsAngles, AsAngles))[1:-1], start=1):
-        CurrentRsAngle = RsAngles[i]
-        if np.sign(CurrentRsAngle) != np.sign(RsAngles[i-1]) and np.sign(CurrentRsAngle) != np.sign(RsAngles[i+1]):
-          # Outlier detected
-          print "Outlier detected at ", self.MarkupsNode.GetNthFiducialLabel(i-1), " of ", self.MarkupsNode.GetName()
-          self.OutlierIdentificationVotes[i] += 1
-          self.MarkupsNode.SetNthFiducialSelected(i,0)    # Currently, unselect outliers
-      
-      print self.OutlierIdentificationVotes
-      print ""
-      
-      return self.MarkupsNode
-   
-    def DeleteIdentifiedOutliers(self):
-      NumOutliersDeleted = 0
-      OrigNumMarkups = self.MarkupsNode.GetNumberOfFiducials()
-      
-      # Landmarks un-selected to identify suspected outliers, delete them
-      for P in range(OrigNumMarkups):
-        if not self.MarkupsNode.GetNthFiducialSelected(P-NumOutliersDeleted):
-          self.MarkupsNode.RemoveMarkup(P-NumOutliersDeleted)
-          NumOutliersDeleted += 1
+      LookingForOutliers = True
+      while LookingForOutliers:
+        # Check each non-boundary point as a potential outlier
+        for PointIndex in range(1, self.MarkupsNode.GetNumberOfFiducials()-1):
+        # Compute into and outof vectors for characterization, and across vector for reference direction
+          CoordsAbove = self.MarkupsNode.GetMarkupPointVector(PointIndex-1, 0)
+          CurrentCoords = self.MarkupsNode.GetMarkupPointVector(PointIndex, 0)
+          CoordsBelow = self.MarkupsNode.GetMarkupPointVector(PointIndex+1, 0)
+
+          IntoVector = [CurrentCoords[dim] - CoordsAbove[dim] for dim in range(3)]
+          OutOfVector = [CoordsBelow[dim] - CurrentCoords[dim] for dim in range(3)]
+          AcrossVector = [CoordsBelow[dim] - CoordsAbove[dim] for dim in range(3)]
           
-      # Update self class variables
-      self.OutlierIdentificationVotes = np.zeros(self.MarkupsNode.GetNumberOfFiducials())
-   
-      return self.MarkupsNode
+          # Compute angles between IntoVector and AcrossVector, and between OutOfVector and AcrossVector
+          IntoAngleRad = np.math.acos(np.dot(IntoVector, AcrossVector) / (np.linalg.norm(IntoVector) * np.linalg.norm(AcrossVector)))
+          IntoAngleDeg = IntoAngleRad * 180 / np.pi
+          OutOfAngleRad = np.math.acos(np.dot(AcrossVector, OutOfVector) / (np.linalg.norm(AcrossVector) * np.linalg.norm(OutOfVector)))
+          OutOfAngleDeg = OutOfAngleRad * 180 / np.pi
+          
+          print "Point " + self.MarkupsNode.GetNthFiducialLabel(PointIndex)
+          print " IntoAngle: " + str(IntoAngleDeg) + " - OutOfAngle: " + str(OutOfAngleDeg)
+          
+          if PointIndex == self.MarkupsNode.GetNumberOfFiducials()-2:
+            # We got through all points without identifying an outlier
+            LookingForOutliers = False
+            
+          # Compare angles with threshold to decide if point is outlier or not
+          if IntoAngleDeg > AngleThreshold and OutOfAngleDeg > AngleThreshold:
+            # If point is outlier, delete the point, and begin loop again since self.MarkupsNode.GetNumberOfFiducials() changed
+            self.MarkupsNode.RemoveMarkup(PointIndex)
+            break 
       
+      return self.MarkupsNode
+    
     def UpdatePatchedSidePointNames(self, Node):
       CurrentSubPatchIndex = 0
       SubPatchPointIndex = 0
