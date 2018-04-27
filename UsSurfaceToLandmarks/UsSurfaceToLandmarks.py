@@ -141,7 +141,7 @@ class UsSurfaceToLandmarksWidget(ScriptedLoadableModuleWidget):
     SmthIterSpinBox = self.SmoothingIterationsSlider.SpinBox
     SmthIterSpinBox.setDecimals(0)
     self.SmoothingIterationsSlider.singleStep = 1
-    self.SmoothingIterationsSlider.minimum = 1
+    self.SmoothingIterationsSlider.minimum = 0
     self.SmoothingIterationsSlider.maximum = 100
     self.SmoothingIterationsSlider.value = 10
     self.SmoothingIterationsSlider.setToolTip("Set the maximum number of iterations vtkSmoothPolyDataFilter will run for")
@@ -159,17 +159,6 @@ class UsSurfaceToLandmarksWidget(ScriptedLoadableModuleWidget):
     self.UndersampleFractionSlider.setToolTip("Set the fraction of original voxels to be used for kMeans landmark generation")
     self.DataConfigInterfaceGridLayout.addWidget(qt.QLabel("Undersampling fraction"), 6, 0, 1, 1)
     self.DataConfigInterfaceGridLayout.addWidget(self.UndersampleFractionSlider, 6, 1, 1, 3)
-    
-    self.DuplicateMisdirectionThresholdSlider = ctk.ctkSliderWidget()
-    DplctMsdtnSpinBox = self.DuplicateMisdirectionThresholdSlider.SpinBox
-    DplctMsdtnSpinBox.setDecimals(1)
-    self.DuplicateMisdirectionThresholdSlider.singleStep = 0.1
-    self.DuplicateMisdirectionThresholdSlider.minimum = 0
-    self.DuplicateMisdirectionThresholdSlider.maximum = 90
-    self.DuplicateMisdirectionThresholdSlider.value = 45
-    self.DuplicateMisdirectionThresholdSlider.setToolTip("Set the angle threshold for interpoint direction to be considered as resulting from landmark duplication")
-    self.DataConfigInterfaceGridLayout.addWidget(qt.QLabel("Duplication misdirection"), 7, 0, 1, 1)
-    self.DataConfigInterfaceGridLayout.addWidget(self.DuplicateMisdirectionThresholdSlider, 7, 1, 1, 3)
     
     #
     # Data Interface
@@ -253,11 +242,6 @@ class UsSurfaceToLandmarksWidget(ScriptedLoadableModuleWidget):
     self.GenerateLandmarksButton.enabled = True
     self.DataInterfaceGridLayout.addWidget(self.GenerateLandmarksButton, 7,1,1,2)
     #self.DataInterfaceGridLayout.addStretch(0)
-
-    self.ConsolidateDuplicatesButton = qt.QPushButton("Consolidate Duplicate Landmarks")
-    self.ConsolidateDuplicatesButton.toolTip = "Finds TrPs with multiple landmarks and merges them."
-    self.ConsolidateDuplicatesButton.enabled = True
-    self.DataInterfaceGridLayout.addWidget(self.ConsolidateDuplicatesButton, 8,0,1,2)
     
     #self.InputVolumeSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.onSelect)
     #self.outputSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.onSelect)
@@ -274,9 +258,6 @@ class UsSurfaceToLandmarksWidget(ScriptedLoadableModuleWidget):
     self.RemoveIslandsButton.connect('clicked(bool)', self.OnRemoveIslandsButtonClicked)
     
     self.GenerateLandmarksButton.connect("clicked(bool)", self.OnGenerateLandmarksButtonClicked)
-    
-    # Landmarks processing operation buttons
-    self.ConsolidateDuplicatesButton.connect('clicked(bool)', self.OnConsolidateDuplicatesButtonClicked)
     
     self.ReloadButton = qt.QPushButton("Reload Module")
     self.ReloadButton.enabled = True
@@ -401,6 +382,7 @@ class UsSurfaceToLandmarksWidget(ScriptedLoadableModuleWidget):
     WorkingNodeName = self.WorkingLabelMapStorage.currentNode().GetName()
     if self.SegmentationNode.GetClosedSurfaceRepresentation(WorkingNodeName) == None:
       self.SegmentationNode.CreateClosedSurfaceRepresentation()
+      
     WorkingPolyData = self.SegmentationNode.GetClosedSurfaceRepresentation(WorkingNodeName)
     
     # Smooth working polydata
@@ -422,9 +404,9 @@ class UsSurfaceToLandmarksWidget(ScriptedLoadableModuleWidget):
     
     # Clear mrmlScene of old labelmap node before exporting the new one
     #OldLabelMapNode = self.WorkingLabelMapStorage.currentNode()
-    OldLabelMapNode = slicer.util.getNode(WorkingNodeName)
-    if OldLabelMapNode != None:
-      slicer.mrmlScene.RemoveNode(OldLabelMapNode)
+    #OldLabelMapNode = slicer.util.getNode(WorkingNodeName)
+    #if OldLabelMapNode != None:
+    #  slicer.mrmlScene.RemoveNode(OldLabelMapNode)
     
     # Export segmentation label map representation to mrml node for storage in interface
     SmoothedLabelMapNode = slicer.vtkMRMLLabelMapVolumeNode()
@@ -647,6 +629,9 @@ class UsSurfaceToLandmarksLogic(ScriptedLoadableModuleLogic):
   def SmoothPolyData(self, PolyData, ConvergenceThresh, NumIterations):
     # Instantiate vtk polydata smoother
     vtkSmoother = vtk.vtkSmoothPolyDataFilter()
+    
+    vtkSmoother.SetFeatureEdgeSmoothing(True)
+    
     vtkSmoother.SetConvergence(ConvergenceThresh)
     vtkSmoother.SetNumberOfIterations(int(NumIterations))
     
@@ -852,190 +837,6 @@ class UsSurfaceToLandmarksLogic(ScriptedLoadableModuleLogic):
       LandmarksMarkupsNode.AddFiducialFromArray(CurrentClusterCoords)
       
     return LandmarksMarkupsNode
-
-  def ConsolidateDuplicateLandmarks(self, MarkupsNode, DuplicateMisdirectionThreshold):
-    # Uses PreProcessLandmarksWidget to separate landmarks into left and right sides
-    slicer.modules.preprocesslandmarks.widgetRepresentation()
-    pplWidget = slicer.modules.PreProcessLandmarksWidget
-    pplWidget.SingleNodeSelector.setCurrentNode(MarkupsNode)
-    
-    LeftMarkups = pplWidget.LeftSideSelector.currentNode()
-    RightMarkups = pplWidget.RightSideSelector.currentNode()
-    
-    # Identify and merge each side's duplicates from local inter-point directionality
-    for Point in range(LeftMarkups.GetNumberOfFiducials()-1):
-      if self.IsPointPairDuplicateFromDirection(LeftMarkups, Point, Point+1, DuplicateMisdirectionThreshold):
-        LeftMarkups.SetNthFiducialSelected(Point,False)
-        LeftMarkups.SetNthFiducialSelected(Point+1,False)
-        LeftMarkups = self.GetMergeMarkupsUnselectedPointGroups(LeftMarkups)
-    for Point in range(RightMarkups.GetNumberOfFiducials()-1):
-      if self.IsPointPairDuplicateFromDirection(RightMarkups, Point, Point+1, DuplicateMisdirectionThreshold):
-        RightMarkups.SetNthFiducialSelected(Point,False)
-        RightMarkups.SetNthFiducialSelected(Point+1,False)
-        RightMarkups = self.GetMergeMarkupsUnselectedPointGroups(RightMarkups)
-
-    # Retrieve nodes with directionally identified duplicates merged
-    #DirectionallyMergedLeftNode = self.GetMergeMarkupsUnselectedPointGroups(LeftMarkups)
-    #DirectionallyMergedRightNode = self.GetMergeMarkupsUnselectedPointGroups(RightMarkups)
-    
-    """
-    # Identify and un-select each sides duplicates based on inter-point distances
-    for Point in range(LeftMarkups.GetNumberOfFiducials()):
-      if self.IsPointDuplicateFromDistance(LeftMarkups, Point):
-        LeftMarkups.SetNthFiducialSelected(Point,False)
-    for Point in range(RightMarkups.GetNumberOfFiducials()):
-      if self.IsPointDuplicateFromDistance(RightMarkups, Point):
-        RightMarkups.SetNthFiducialSelected(Point,False)
-        
-    SpatiallyMergedLeftNode = self.GetMergeMarkupsUnselectedPointGroups(DirectionallyMergedLeftNode)
-    SpatiallyMergedRightNode = self.GetMergeMarkupsUnselectedPointGroups(DirectionallyMergedRightNode)
-    """
-    
-    ConsolidatedMarkupsNode = self.RecombineLeftRightMarkups(LeftMarkups, RightMarkups)
-    pplWidget.SingleNodeSelector.setCurrentNode(None)
-    slicer.mrmlScene.RemoveNode(MarkupsNode)
-    slicer.util.reloadScriptedModule('PreProcessLandmarks')
-    
-    return ConsolidatedMarkupsNode
- 
-  def IsPointPairDuplicateFromDirection(self, MarkupsNode, Point1Index, Point2Index, DuplicateMisdirectionThreshold):
-    # Get coords from both candidates of duplicate pair - MarkupsNode[Index] and MarkupsNode[Index+1]
-    Candidate1Coords = MarkupsNode.GetMarkupPointVector(Point1Index, 0)
-    Candidate2Coords = MarkupsNode.GetMarkupPointVector(Point2Index, 0)
-    
-    # Compute inter-candidate direction, to compare to reference direction
-    InterCandidateDirection = [Candidate1Coords[dim] - Candidate2Coords[dim] for dim in range(3)]
-    #AverageCandidateLocation = [(CurrentCoords[dim] + CandidateDuplicateCoords[dim])/2.0 for dim in range(3)]
-    
-    # Get coords of points above and below candidate pair, or deal with boundary conditions, for reference direction
-    
-    if Point1Index == 0:    # Boundary condition when there is no point above candidate pair, use top point for reference
-      TopCoords = Candidate1Coords
-      PointBelowPairCoords = MarkupsNode.GetMarkupPointVector(Point2Index+1, 0)
-      ReferenceDirection = [TopCoords[dim] - PointBelowPairCoords[dim] for dim in range(3)]
-      
-    elif Point2Index == MarkupsNode.GetNumberOfFiducials()-1: # Boundary condition when there is no point below candidate pair
-      BottomCoords = Candidate2Coords
-      PointAbovePairCoords = MarkupsNode.GetMarkupPointVector(Point1Index-1, 0)
-      ReferenceDirection = [PointAbovePairCoords[dim] - BottomCoords[dim] for dim in range(3)]
-      
-    else:                   # No boundary, can use point above and below candidate pair for reference direction
-      PointAbovePairCoords = MarkupsNode.GetMarkupPointVector(Point1Index-1, 0)
-      PointBelowPairCoords = MarkupsNode.GetMarkupPointVector(Point2Index+1, 0)
-      ReferenceDirection = [PointAbovePairCoords[dim] - PointBelowPairCoords[dim] for dim in range(3)]
-      
-    # Compute angle between InterCandidateDirection and ReferenceDirection as measure of deviation from axial symmetry
-    AngleRad = np.math.acos(np.dot(ReferenceDirection, InterCandidateDirection)/ (np.linalg.norm(ReferenceDirection)*np.linalg.norm(InterCandidateDirection)))
-    AngleDeg = AngleRad * 180.0 / np.pi
-    
-    # If the angle between InterCandidateDirection and ReferenceDiretion is large, we have probably found a duplicate
-    print "Angle between " + MarkupsNode.GetNthFiducialLabel(Point1Index) + " and " + MarkupsNode.GetNthFiducialLabel(Point2Index) \
-      + " candidate pair and reference direction: " + str(AngleDeg)
-    
-    if AngleDeg > DuplicateMisdirectionThreshold:
-      print " Duplicate detected!"
-      return True
-    else:
-      return False
-      
-  def IsPointDuplicateFromDistance(self, MarkupsNode, Index):
-    # Compute inter-point distance statistics
-    RunningDistanceSum = 0.0
-    for pi in range(MarkupsNode.GetNumberOfFiducials()-1):
-      CurrentCoords = MarkupsNode.GetMarkupPointVector(pi,0)
-      NextCoords = MarkupsNode.GetMarkupPointVector(pi+1,0)
-      CurrentDistance = np.linalg.norm([NextCoords[dim] - CurrentCoords[dim] for dim in range(3)])
-      RunningDistanceSum += CurrentDistance
-    AvgDistance = RunningDistanceSum / float(MarkupsNode.GetNumberOfFiducials()-1)
-    
-    # Compare local inter-point distances of interest amongst selves and with stats
-    # Boundary conditions at Index = 0 and Index = MarkupsNode.GetNumberOfFiducials()-1
-    Point1coords = MarkupsNode.GetMarkupPointVector(Index, 0)
-    if Index == 0:
-      Point2coords = MarkupsNode.GetMarkupPointVector(Index+1, 0)
-      InterCandidateVector = [Point2coords[dim] - Point1coords[dim] for dim in range(3)]
-      CandidateDistance = np.linalg.norm(InterCandidateVector)
-      
-      CandidateReplacementCoords = [(Point1coords[dim] + Point2coords[dim]) / 2.0 for dim in range(3)]
-      RefCoords1 = MarkupsNode.GetMarkupPointVector(Index+2, 0)
-      ReferenceVector1 = [CandidateReplacementCoords[dim] - RefCoords1[dim] for dim in range(3)]
-      ReferenceDistance = np.linalg.norm(ReferenceVector1)
-    
-    elif Index == MarkupsNode.GetNumberOfFiducials() - 1:
-      Point2coords = MarkupsNode.GetMarkupPointVector(Index-1, 0)
-      InterCandidateVector = [Point1coords[dim] - Point2coords[dim] for dim in range(3)]
-      CandidateDistance = np.linalg.norm(InterCandidateVector)
-      
-      CandidateReplacementCoords = [(Point1coords[dim] + Point2coords[dim]) / 2.0 for dim in range(3)]
-      RefCoords1 = MarkupsNode.GetMarkupPointVector(Index-2, 0)
-      ReferenceVector1 = [CandidateReplacementCoords[dim] - RefCoords1[dim] for dim in range(3)]
-      ReferenceDistance = np.linalg.norm(ReferenceVector1)
-      
-    else:
-      Point2coords = MarkupsNode.GetMarkupPointVector(Index-1, 0)
-      Point3coords = MarkupsNode.GetMarkupPointVector(Index+1, 0)
-      InterCandidateVector1 = [Point1coords[dim] - Point2coords[dim] for dim in range(3)]
-      InterCandidateVector2 = [Point1coords[dim] - Point3coords[dim] for dim in range(3)]
-      CandidateDistance1 = np.linalg.norm(InterCandidateVector1)
-      CandidateDistance2 = np.linalg.norm(InterCandidateVector2)
-      CandidateDistance = min(CandidateDistance1, CandidateDistance2)
-      
-      CandidateReplacementCoords1 = [(Point1coords[dim] + Point2coords[dim]) / 2.0 for dim in range(3)]
-      RefCoords1 = MarkupsNode.GetMarkupPointVector(Index+1, 0)
-      ReferenceVector1 = [CandidateReplacementCoords1[dim] - RefCoords1[dim] for dim in range(3)]
-      ReferenceDistance1 = np.linalg.norm(ReferenceVector1)
-      
-      CandidateReplacementCoords2 = [(Point1coords[dim] + Point3coords[dim]) / 2.0 for dim in range(3)]
-      RefCoords2 = MarkupsNode.GetMarkupPointVector(Index-1, 0)
-      ReferenceVector2 = [CandidateReplacementCoords2[dim] - RefCoords2[dim] for dim in range(3)]
-      ReferenceDistance2 = np.linalg.norm(ReferenceVector2)
-      
-      ReferenceDistance = max(ReferenceDistance1, ReferenceDistance2)
-      
-    if (CandidateDistance < 0.33 * AvgDistance or CandidateDistance < 0.33 * ReferenceDistance):
-      return True
-    else:
-      return False
-    
-  def GetMergeMarkupsUnselectedPointGroups(self, MarkupsNode):
-    # Produce new markups node with selected point groups merged
-    NewMarkupsNode = slicer.vtkMRMLMarkupsFiducialNode()
-    NewMarkupsNode.SetName(MarkupsNode.GetName())
-    for pi in range(MarkupsNode.GetNumberOfFiducials()):
-      if not MarkupsNode.GetNthFiducialSelected(pi):
-        if pi == MarkupsNode.GetNumberOfFiducials()-1 or MarkupsNode.GetNthFiducialSelected(pi+1):  # A lone, unselected point should not be merged
-          MarkupsNode.SetNthFiducialSelected(pi+1, True)
-        else:
-          OldCoords1 = MarkupsNode.GetMarkupPointVector(pi, 0)
-          OldCoords2 = MarkupsNode.GetMarkupPointVector(pi+1, 0)
-          MergedCoords = [(OldCoords1[dim] + OldCoords2[dim])/2.0 for dim in range(3)]
-          NewMarkupsNode.AddFiducialFromArray(MergedCoords)
-      else:
-        NewPointCoords = MarkupsNode.GetMarkupPointVector(pi, 0)
-        NewPointName = MarkupsNode.GetNthFiducialLabel(pi)
-        NewMarkupsNode.AddFiducialFromArray(NewPointCoords)
-        NewMarkupsNode.SetNthFiducialLabel(pi, NewPointName)
-        # THEN the next point (pi+1) should be un-selected as well      
-      
-    return NewMarkupsNode
-    
-  def RecombineLeftRightMarkups(self, LeftNode, RightNode):
-    # Simply adds left then right points to new node
-    LeftCoords = [LeftNode.GetMarkupPointVector(i,0) for i in range(LeftNode.GetNumberOfFiducials())]
-    LeftNames = [LeftNode.GetNthFiducialLabel(i) for i in range(LeftNode.GetNumberOfFiducials())]
-    RightCoords = [RightNode.GetMarkupPointVector(i,0) for i in range(RightNode.GetNumberOfFiducials())]
-    RightNames = [RightNode.GetNthFiducialLabel(i) for i in range(RightNode.GetNumberOfFiducials())]
-    
-    RecombinedMarkupsNode = slicer.vtkMRMLMarkupsFiducialNode()
-    for i, lc in enumerate(LeftCoords):
-      RecombinedMarkupsNode.AddFiducialFromArray(lc)
-      RecombinedMarkupsNode.SetNthFiducialLabel(i, LeftNames[i])
-    
-    for i, rc in enumerate(RightCoords):
-      RecombinedMarkupsNode.AddFiducialFromArray(rc)
-      RecombinedMarkupsNode.SetNthFiducialLabel(i, RightNames[i])
-    
-    return RecombinedMarkupsNode
     
 class UsSurfaceToLandmarksTest(ScriptedLoadableModuleTest):
   """

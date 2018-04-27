@@ -233,6 +233,18 @@ class PreProcessLandmarksWidget(ScriptedLoadableModuleWidget):
     self.RepairConfigInterfaceLayout.addWidget(qt.QLabel("kMeans window size"), 1, 0, 1, 1)
     self.RepairConfigInterfaceLayout.addWidget(self.kmWindowSizeSlider, 1, 1, 1, 3)
     
+    # Angular threshold for detecting duplicate points
+    self.DuplicateMisdirectionThresholdSlider = ctk.ctkSliderWidget()
+    DplctMsdtnSpinBox = self.DuplicateMisdirectionThresholdSlider.SpinBox
+    DplctMsdtnSpinBox.setDecimals(1)
+    self.DuplicateMisdirectionThresholdSlider.singleStep = 0.1
+    self.DuplicateMisdirectionThresholdSlider.minimum = 0
+    self.DuplicateMisdirectionThresholdSlider.maximum = 90
+    self.DuplicateMisdirectionThresholdSlider.value = 45
+    self.DuplicateMisdirectionThresholdSlider.setToolTip("Set the angle threshold for interpoint direction to be considered as resulting from landmark duplication")
+    self.RepairConfigInterfaceLayout.addWidget(qt.QLabel("Duplication misdirection"), 2, 0, 1, 1)
+    self.RepairConfigInterfaceLayout.addWidget(self.DuplicateMisdirectionThresholdSlider, 2, 1, 1, 3)
+    
     # Degree of polynomial to fit to landmark coordinates and landmark spacing
     self.PolyFitDegreeSlider = ctk.ctkSliderWidget()
     self.PolyFitDegreeSlider.singleStep = 1
@@ -241,9 +253,10 @@ class PreProcessLandmarksWidget(ScriptedLoadableModuleWidget):
     self.PolyFitDegreeSlider.minimum = 1
     self.PolyFitDegreeSlider.maximum = 10
     self.PolyFitDegreeSlider.value = 5
-    self.RepairConfigInterfaceLayout.addWidget(qt.QLabel("Polyfit degree"), 2, 0, 1, 1)
-    self.RepairConfigInterfaceLayout.addWidget(self.PolyFitDegreeSlider, 2, 1, 1, 3)
+    self.RepairConfigInterfaceLayout.addWidget(qt.QLabel("Polyfit degree"), 3, 0, 1, 1)
+    self.RepairConfigInterfaceLayout.addWidget(self.PolyFitDegreeSlider, 3, 1, 1, 3)
     
+    """ Does not provide attitional weight to boundaries as intended
     # Slider to input the number of times to multiply polynomial boundary points, to control deviations at boundaries
     self.BoundaryMultiplicitySlider = ctk.ctkSliderWidget()
     self.BoundaryMultiplicitySlider.singleStep = 1
@@ -254,6 +267,7 @@ class PreProcessLandmarksWidget(ScriptedLoadableModuleWidget):
     self.BoundaryMultiplicitySlider.value = 1
     self.RepairConfigInterfaceLayout.addWidget(qt.QLabel("PolyBoundary Multiplicity"), 3, 0, 1, 1)
     self.RepairConfigInterfaceLayout.addWidget(self.BoundaryMultiplicitySlider, 3, 1, 1, 3)
+    """
     
     # Scalar multiplier in comparing landmarks/intervals to gloabal/local measures of normality, higher value requires higher abnormality for abnormality detection
     self.SpecificitySlider = ctk.ctkSliderWidget()
@@ -294,24 +308,25 @@ class PreProcessLandmarksWidget(ScriptedLoadableModuleWidget):
     
     self.kmWindowSizeSlider.connect('valueChanged(double)', self.OnkmWindowSliderChanged)
     self.PolyFitDegreeSlider.connect('valueChanged(double)', self.OnPolyFitDegreeSliderChanged)
-    self.BoundaryMultiplicitySlider.connect('valueChanged(double)', self.OnBoundaryMultiplicitySliderChanged)
+    #self.BoundaryMultiplicitySlider.connect('valueChanged(double)', self.OnBoundaryMultiplicitySliderChanged)
     self.SpecificitySlider.connect('valueChanged(double)', self.OnSpecificitySliderChanged)
     self.ImputationSpecificitySlider.connect('valueChanged(double)', self.OnImputationSpecificitySliderChanged)
     
     #*********DataDisplay*********#
     
+    # Box to select and interact with left-sided landmarks
     self.LeftSideSelector = slicer.qMRMLNodeComboBox()
     self.LeftSideSelector.nodeTypes = ["vtkMRMLMarkupsFiducialNode",]
     self.LeftSideSelector.selectNodeUponCreation = False
     self.LeftSideSelector.enabled  = False
     self.LeftSideSelector.addEnabled = False
-    #self.LeftSideSelector.editEnabled = False
     self.LeftSideSelector.noneEnabled = True
     self.LeftSideSelector.removeEnabled = False
     self.LeftSideSelector.renameEnabled = False
     self.LeftSideSelector.toolTip = "Stores the left side of the patient's landmarks being repaired"
     self.LeftSideSelector.setMRMLScene(slicer.mrmlScene)
 
+    # Box to select and interact with left-sided landmarks
     self.RightSideSelector = slicer.qMRMLNodeComboBox()
     self.RightSideSelector.nodeTypes = ["vtkMRMLMarkupsFiducialNode",]
     self.RightSideSelector.selectNodeUponCreation = False
@@ -375,51 +390,47 @@ class PreProcessLandmarksWidget(ScriptedLoadableModuleWidget):
     
     #*********Operations*********#
     
-    self.CategorizeLeftRightButton = qt.QPushButton("Categorize left-right landmarks")
+    self.CategorizeLeftRightButton = qt.QPushButton("Categorize Left-Right Landmarks")
     self.CategorizeLeftRightButton.toolTip = "Groups selected nodes landmarks into left and right landmark nodes used for repair operations"
     self.CategorizeLeftRightButton.enabled = True
     self.RepairInterfaceLayout.addWidget(self.CategorizeLeftRightButton, 2, 1, 1, 3)
     
+    self.ConsolidateDuplicatesButton = qt.QPushButton("Consolidate Duplicate Points")
+    self.ConsolidateDuplicatesButton.toolTip = "Finds TrPs with multiple landmarks and merges them."
+    self.ConsolidateDuplicatesButton.enabled = True
+    self.RepairInterfaceLayout.addWidget(self.ConsolidateDuplicatesButton, 3, 1, 1, 3)
+    
     self.AutoGenPatchButton = qt.QPushButton("AutoGen Patch")
-    self.AutoGenPatchButton.toolTip = "Guess missing landmarks"
+    self.AutoGenPatchButton.toolTip = "Guess missing landmark locations"
     self.AutoGenPatchButton.enabled = False
-    self.RepairInterfaceLayout.addWidget(self.AutoGenPatchButton, 8, 2, 1, 1)
+    self.RepairInterfaceLayout.addWidget(self.AutoGenPatchButton, 9, 2, 1, 1)
     
     self.ApplyPatchButton = qt.QPushButton("Apply Patch")
     self.ApplyPatchButton.toolTip = "Replace selected side node with itself merged with its patch"
     self.ApplyPatchButton.enabled = False
-    self.RepairInterfaceLayout.addWidget(self.ApplyPatchButton, 8, 3, 1, 1)
+    self.RepairInterfaceLayout.addWidget(self.ApplyPatchButton, 9, 3, 1, 1)
     
     self.SubIntervalSelector = qt.QSpinBox()
     self.SubIntervalSelector.minimum = 0
     self.SubIntervalSelector.maximum = 10
     self.SubIntervalSelector.singleStep = 1
-    self.RepairInterfaceLayout.addWidget(qt.QLabel("SubPatch:"), 10, 0, 1, 1)
-    self.RepairInterfaceLayout.addWidget(self.SubIntervalSelector, 10, 1, 1, 1)
+    self.RepairInterfaceLayout.addWidget(qt.QLabel("SubPatch:"), 11, 0, 1, 1)
+    self.RepairInterfaceLayout.addWidget(self.SubIntervalSelector, 11, 1, 1, 1)
     
     self.AddPointToPatchButton = qt.QPushButton("Add Point")
     self.AddPointToPatchButton.toolTip = "Add one point to SubPatch"
     self.AddPointToPatchButton.enabled = False
-    self.RepairInterfaceLayout.addWidget(self.AddPointToPatchButton, 10, 2, 1, 1)
+    self.RepairInterfaceLayout.addWidget(self.AddPointToPatchButton, 11, 2, 1, 1)
 
     self.RemovePointButton = qt.QPushButton("Remove Point")
     self.RemovePointButton.toolTip = "Remove one point to SubPatch"
     self.RemovePointButton.enabled = False
-    self.RepairInterfaceLayout.addWidget(self.RemovePointButton, 10, 3, 1, 1)    
-   
-    self.RepairInterfaceLayout.addWidget(qt.QLabel(" "), 11, 1, 1, 3)
-   
-    """
-    self.UndoButton = qt.QPushButton("Undo")
-    self.UndoButton.toolTip = "Undo up to" + str(self.MaxUndos) + " operations"
-    self.UndoButton.enabled = True
-    self.RepairInterfaceLayout.addWidget(self.UndoButton, 12, 0, 1, 4)
-    """
-   
+    self.RepairInterfaceLayout.addWidget(self.RemovePointButton, 11, 3, 1, 1)    
+
     self.RemoveOutliersButton = qt.QPushButton("Remove Outliers")
     self.RemoveOutliersButton.toolTip = "Remove points highlighted as outliers by Remove Outliers"
     self.RemoveOutliersButton.enabled = True
-    self.RepairInterfaceLayout.addWidget(self.RemoveOutliersButton, 12, 2, 1, 2)
+    self.RepairInterfaceLayout.addWidget(self.RemoveOutliersButton, 12, 1, 1, 3)
    
     self.RepairInterfaceLayout.addWidget(qt.QLabel(""), 13, 1, 1, 1)
     
@@ -453,6 +464,8 @@ class PreProcessLandmarksWidget(ScriptedLoadableModuleWidget):
     
     self.CategorizeLeftRightButton.connect('clicked(bool)', self.OnCategorizeLeftRight)
     
+    self.ConsolidateDuplicatesButton.connect('clicked(bool)', self.OnConsolidateDuplicatesButtonClicked)
+
     self.AutoGenPatchButton.connect('clicked(bool)', self.OnAutoGenPatchButton)
     self.AutoGenPatchButton.connect('clicked(bool)', self.OnLeftRightBasePatchChange)
     
@@ -467,10 +480,7 @@ class PreProcessLandmarksWidget(ScriptedLoadableModuleWidget):
     self.TrimToCorrespondenceButton.connect('clicked(bool)', self.OnTrimToCorrespondenceButton)
     
     self.RepairNodeButton.connect('clicked(bool)', self.OnRepairButtonClicked)
-    
-    
-    #self.UndoButton.connect('clicked(bool)', self.OnUndoButtonClicked)
-    
+
     # Node interface connections
     #self.AnatomySelector.connect('currentNodeChanged(bool)', self.OnSelectedAnatomyChange)
     #self.LeftSideSelector.connect('currentNodeChanged(bool)', self.OnLeftRightBasePatchChange)
@@ -530,10 +540,7 @@ class PreProcessLandmarksWidget(ScriptedLoadableModuleWidget):
   # Config interface - functions allow user to update program parameters anytime
   
   def OnkmWindowSliderChanged(self):
-    #NewKMeansWindowSize = self.kmWindowSizeSlider.value
-    #self.kmWindowTextDisplay.setText(str(NewKMeansWindowSize))
     if self.logic != None:
-      #self.logic.PatientModel.kmWindowSize = NewKMeansWindowSize
       self.OnSelectedAnatomyChange()
       if self.LeftPatchSelector.currentNode() != None or self.RightPatchSelector.currentNode() != None:   # Check should prevent unwanted patch generation by name check in OnAutoGenPatchButton
         self.OnAutoGenPatchButton()
@@ -541,49 +548,31 @@ class PreProcessLandmarksWidget(ScriptedLoadableModuleWidget):
   
   
   def OnPolyFitDegreeSliderChanged(self):
-    #NewPolyFitDegree = self.PolyFitDegreeSlider.value
-    #self.PolyFitDegreeSliderTextDisplay.setText(str(NewPolyFitDegree))
     if self.logic != None:
       self.OnSelectedAnatomyChange()
       if self.LeftPatchSelector.currentNode() != None or self.RightPatchSelector.currentNode() != None:   # Check should prevent unwanted patch generation by name check in OnAutoGenPatchButton
         self.OnAutoGenPatchButton()
-      #self.logic.PatientModel.PolyFitDegree = NewPolyFitDegree
-      #self.logic.PatientModel.RightSide.PolyFitDegree = NewPolyFitDegree
-      #self.logic.PatientModel.LeftSide.PolyFitDegree = NewPolyFitDegree
     return
   
   def OnBoundaryMultiplicitySliderChanged(self):
-    #NewBoundaryMultiplicity = self.BoundaryMultiplicitySlider.value
     if self.logic != None:
       self.OnSelectedAnatomyChange()
       if self.LeftPatchSelector.currentNode() != None or self.RightPatchSelector.currentNode() != None:   # Check should prevent unwanted patch generation by name check in OnAutoGenPatchButton
         self.OnAutoGenPatchButton()
-      #self.logic.PatientModel.BoundaryMultiplicity = NewBoundaryMultiplicity
 
   def OnSpecificitySliderChanged(self):
-    #NewOmissionSpecificity = self.SpecificitySlider.value
-    #self.SpecificityTextDisplay.setText(str(NewOmissionSpecificity))
     if self.logic != None:
       self.OnSelectedAnatomyChange() 
       if self.LeftPatchSelector.currentNode() != None or self.RightPatchSelector.currentNode() != None:   # Check should prevent unwanted patch generation by name check in OnAutoGenPatchButton
         self.OnAutoGenPatchButton()
-      #self.logic.PatientModel.OmissionDetectionSpecificity = NewOmissionSpecificity
-      #self.logic.PatientModel.RightSide.OmissionDetectionSpecificity = NewOmissionSpecificity
-      #self.logic.PatientModel.LeftSide.OmissionDetectionSpecificity = NewOmissionSpecificity
-    #print str(self.SpecificitySlider.value)
     return
     
   def OnImputationSpecificitySliderChanged(self):
-    #NewImputationSpecificity = self.ImputationSpecificitySlider.value
-    #self.SpecificityTextDisplay.setText(str(NewImputationSpecificity))
     if self.logic != None:
       self.OnSelectedAnatomyChange() 
       if self.LeftPatchSelector.currentNode() != None or self.RightPatchSelector.currentNode() != None:   # Check should prevent unwanted patch generation by name check in OnAutoGenPatchButton
         self.OnAutoGenPatchButton()
-      #self.logic.PatientModel.ImputationSpecificity = NewImputationSpecificity
-      #self.logic.PatientModel.RightSide.ImputationSpecificity = NewImputationSpecificity
-      #self.logic.PatientModel.LeftSide.ImputationSpecificity = NewImputationSpecificity
-    #print str(self.SpecificitySlider.value)
+
     return
     
   # Operations
@@ -591,16 +580,12 @@ class PreProcessLandmarksWidget(ScriptedLoadableModuleWidget):
   def OnSelectedAnatomyChange(self):
     print "New anatomy selected"
     SpineNode = self.SingleNodeSelector.currentNode()
-    #SpineNode =  self.
     if SpineNode != None:
       if self.logic == None:
-        self.logic = RepairLandmarksLogic(SpineNode, self.kmWindowSizeSlider.value, self.PolyFitDegreeSlider.value, self.BoundaryMultiplicitySlider.value, self.SpecificitySlider.value, self.ImputationSpecificitySlider.value)
-      #self.logic = RepairLandmarksLogic(SpineNode, self.kmWindowSizeSlider.value, self.PolyFitDegreeSlider.value, self.BoundaryMultiplicitySlider.value, self.SpecificitySlider.value, self.ImputationSpecificitySlider.value)
-      #self.SpecificitySlider.enabled = True
-      #self.SpineModel = self.logic.PatientModel
-      #self.CategorizeLeftRightButton.enabled = True
+        self.logic = RepairLandmarksLogic(SpineNode, self.kmWindowSizeSlider.value, self.PolyFitDegreeSlider.value, self.SpecificitySlider.value, self.ImputationSpecificitySlider.value)
+
       else:
-        self.logic.UpdateParameters(self.kmWindowSizeSlider.value, self.PolyFitDegreeSlider.value, self.BoundaryMultiplicitySlider.value, self.SpecificitySlider.value, self.ImputationSpecificitySlider.value)
+        self.logic.UpdateParameters(self.kmWindowSizeSlider.value, self.PolyFitDegreeSlider.value, self.SpecificitySlider.value, self.ImputationSpecificitySlider.value)
       self.OnCategorizeLeftRight()
       
     self.UpdateColors()
@@ -657,58 +642,83 @@ class PreProcessLandmarksWidget(ScriptedLoadableModuleWidget):
     
     self.UpdateColors()
     
+  def OnConsolidateDuplicatesButtonClicked(self):
+    MarkupsNode = self.SingleNodeSelector.currentNode()
+    if MarkupsNode == None:
+      print "ERROR - No output landmarks node found"
+      return False
+      
+    else:
+      logic = RepairLandmarksLogic(self.SingleNodeSelector.currentNode(), self.kmWindowSizeSlider.value, self.PolyFitDegreeSlider.value, self.SpecificitySlider.value, self.ImputationSpecificitySlider.value)
+      ConsolidatedMarkupsNode = logic.PatientModel.ConsolidateDuplicateLandmarks(MarkupsNode, self.DuplicateMisdirectionThresholdSlider.value)
+      OldNodeName = MarkupsNode.GetName()
+      
+      # Remove Left and Right side nodes instantiated by preprocesslandmarks module for duplicate detection
+      slicer.mrmlScene.RemoveNode(slicer.util.getNode(OldNodeName))
+      slicer.mrmlScene.RemoveNode(slicer.util.getNode(OldNodeName + '_Left'))
+      slicer.mrmlScene.RemoveNode(slicer.util.getNode(OldNodeName + '_Right'))
+      
+      ConsolidatedMarkupsNode.SetName(OldNodeName)
+      slicer.mrmlScene.AddNode(ConsolidatedMarkupsNode)
+      self.SingleNodeSelector.setCurrentNode(ConsolidatedMarkupsNode)
+      ConsolidatedMarkupsNode.CreateDefaultDisplayNodes()
+
+      self.OnCategorizeLeftRight()
+      #slicer.util.reloadScriptedModule('preprocesslandmarks')
+    
+      return True  
+    
   def OnCategorizeLeftRight(self):
     
     # Check input data
     if self.SingleNodeSelector.currentNode() == None:
       print "Error - require MarkupsNode to segment into left and right sides"
       return
-    
-    
+
     # Following logic check may be un-necessary as it is called when Widget.SingleNodeSelector.currentNode() changes
-    if self.logic == None:
-      self.logic = RepairLandmarksLogic(self.SingleNodeSelector.currentNode(), self.kmWindowSizeSlider.value, self.PolyFitDegreeSlider.value, self.BoundaryMultiplicitySlider.value, self.SpecificitySlider.value, self.ImputationSpecificitySlider.value)
-      #self.SpecificitySlider.enabled = True
-    else:
-      self.logic.UpdateParameters(self.kmWindowSizeSlider.value, self.PolyFitDegreeSlider.value, self.BoundaryMultiplicitySlider.value, self.SpecificitySlider.value, self.ImputationSpecificitySlider.value)
+    #if self.logic == None:
+    self.logic = RepairLandmarksLogic(self.SingleNodeSelector.currentNode(), self.kmWindowSizeSlider.value, self.PolyFitDegreeSlider.value, self.SpecificitySlider.value, self.ImputationSpecificitySlider.value)
+
+    #else:
+    #  self.logic.UpdateParameters(self.kmWindowSizeSlider.value, self.PolyFitDegreeSlider.value, self.BoundaryMultiplicitySlider.value, self.SpecificitySlider.value, self.ImputationSpecificitySlider.value)
+    
     # Get Left and Right side markups nodes
     (LeftNode, RightNode) = self.logic.PatientModel.ClassifyLeftRight()
-    
-    # Update scene
+
+    # Remove prior left-right nodes, if they exist
     PriorLeft = slicer.util.getNode(LeftNode.GetName())
     if PriorLeft != None:
       self.LeftSideSelector.setCurrentNode(None)
       slicer.mrmlScene.RemoveNode(PriorLeft)
-    
+
     PriorRight = slicer.util.getNode(RightNode.GetName())
     if PriorRight != None:
       self.RightSideSelector.setCurrentNode(None)
       slicer.mrmlScene.RemoveNode(PriorRight)    
-    
+
     # Add new nodes to scene
     slicer.mrmlScene.AddNode(LeftNode)
     slicer.mrmlScene.AddNode(RightNode)
-    
+
     LeftNode.CreateDefaultDisplayNodes()
     RightNode.CreateDefaultDisplayNodes()
-    
+
     # Update user interface
     self.LeftSideSelector.setCurrentNode(LeftNode)
     self.RightSideSelector.setCurrentNode(RightNode)
-    
+
     PriorSelectedSideNode = self.RepairSideSelector.currentNode()
     if PriorSelectedSideNode != None:
       self.RepairSideSelector.setCurrentNode(None)
       slicer.mrmlScene.RemoveNode(PriorSelectedSideNode)
-      
+
       if PriorSelectedSideNode.GetName().__contains__("_Left"):
         self.RepairSideSelector.setCurrentNode(LeftNode)
       if PriorSelectedSideNode.GetName().__contains__("_Right"):
         self.RepairSideSelector.setCurrentNode(RightNode)
-      
-    
+
     self.UpdateColors()
-    
+
   def OnAutoGenPatchButton(self):
     
     # Probably should necessitate continuity of data on the user's end
@@ -1276,7 +1286,7 @@ class DegradeLandmarksLogic(ScriptedLoadableModuleLogic):
 
 class RepairLandmarksLogic(ScriptedLoadableModuleLogic):
   class PatientTransverseProcesses:
-    def __init__(self, parent, Node, kmWindowSize, PolyFitDegree, BoundaryMultiplicity, OmissionDetectionSpecificity, ImputationSpecificity):
+    def __init__(self, parent, Node, kmWindowSize, PolyFitDegree, OmissionDetectionSpecificity, ImputationSpecificity):
       self.ParentLogic = parent
     
       # Markups node
@@ -1289,7 +1299,6 @@ class RepairLandmarksLogic(ScriptedLoadableModuleLogic):
       # Operation parameters
       self.kmWindowSize = int(kmWindowSize)
       self.PolyFitDegree = int(PolyFitDegree)
-      self.BoundaryMultiplicity = int(BoundaryMultiplicity)
       self.OmissionDetectionSpecificity = OmissionDetectionSpecificity
       self.ImputationSpecificity = ImputationSpecificity
       
@@ -1309,11 +1318,13 @@ class RepairLandmarksLogic(ScriptedLoadableModuleLogic):
       
     def ClassifyLeftRight(self):  
 
+      # Sort points, superior to inferior, so they may be systematically tested
       self.SortPointsVertically()
       LabelsCoords = [(self.MarkupsNode.GetNthFiducialLabel(i), self.MarkupsNode.GetMarkupPointVector(i,0)) for i in range(self.MarkupsNode.GetNumberOfFiducials())]
       SortedPointsLeftVotes = self.MarkupsNode.GetNumberOfFiducials() * [0]
       SortedPointsRightVotes = self.MarkupsNode.GetNumberOfFiducials() * [0]
       
+      # Select points inside k-means window
       for i in range(0, self.MarkupsNode.GetNumberOfFiducials()-self.kmWindowSize+1):
         MarkupsWindow = LabelsCoords[i:i+self.kmWindowSize]
         #print MarkupsWindow
@@ -1351,8 +1362,8 @@ class RepairLandmarksLogic(ScriptedLoadableModuleLogic):
           NewRightSide.AddFiducialFromArray(UnclassifiedPoint[1])
           NewRightSide.SetNthFiducialLabel(NewRightSide.GetNumberOfFiducials()-1, UnclassifiedPoint[0] + '_Right')
 
-      self.LeftSide = self.ParentLogic.SpineSide(self, NewLeftSide, self.PolyFitDegree, self.BoundaryMultiplicity, self.OmissionDetectionSpecificity, self.ImputationSpecificity)
-      self.RightSide = self.ParentLogic.SpineSide(self, NewRightSide, self.PolyFitDegree, self.BoundaryMultiplicity, self.OmissionDetectionSpecificity, self.ImputationSpecificity)
+      self.LeftSide = self.ParentLogic.SpineSide(self, NewLeftSide, self.PolyFitDegree, self.OmissionDetectionSpecificity, self.ImputationSpecificity)
+      self.RightSide = self.ParentLogic.SpineSide(self, NewRightSide, self.PolyFitDegree, self.OmissionDetectionSpecificity, self.ImputationSpecificity)
       
       return (self.LeftSide.MarkupsNode, self.RightSide.MarkupsNode)
       
@@ -1462,6 +1473,172 @@ class RepairLandmarksLogic(ScriptedLoadableModuleLogic):
         #print Centroids
       return (DataSetLabels, Centroids)
 
+    def ConsolidateDuplicateLandmarks(self, MarkupsNode, DuplicateMisdirectionThreshold):
+      # Uses PreProcessLandmarksWidget to separate landmarks into left and right sides
+      slicer.modules.preprocesslandmarks.widgetRepresentation()
+      pplWidget = slicer.modules.PreProcessLandmarksWidget
+      pplWidget.SingleNodeSelector.setCurrentNode(MarkupsNode)
+      
+      LeftMarkups = pplWidget.LeftSideSelector.currentNode()
+      RightMarkups = pplWidget.RightSideSelector.currentNode()
+      
+      # Identify and merge each side's duplicates from local inter-point directionality
+      for Point in range(LeftMarkups.GetNumberOfFiducials()-1):
+        if self.IsPointPairDuplicateFromDirection(LeftMarkups, Point, Point+1, DuplicateMisdirectionThreshold):
+          LeftMarkups.SetNthFiducialSelected(Point,False)
+          LeftMarkups.SetNthFiducialSelected(Point+1,False)
+          LeftMarkups = self.GetMergeMarkupsUnselectedPointGroups(LeftMarkups)
+      for Point in range(RightMarkups.GetNumberOfFiducials()-1):
+        if self.IsPointPairDuplicateFromDirection(RightMarkups, Point, Point+1, DuplicateMisdirectionThreshold):
+          RightMarkups.SetNthFiducialSelected(Point,False)
+          RightMarkups.SetNthFiducialSelected(Point+1,False)
+          RightMarkups = self.GetMergeMarkupsUnselectedPointGroups(RightMarkups)
+
+      # Identify and un-select each sides duplicates based on inter-point distances
+      for Point in range(LeftMarkups.GetNumberOfFiducials()):
+        if self.IsPointDuplicateFromDistance(LeftMarkups, Point):
+          LeftMarkups.SetNthFiducialSelected(Point,False)
+          LeftMarkups.SetNthFiducialSelected(Point+1,False)
+          LeftMarkups = self.GetMergeMarkupsUnselectedPointGroups(LeftMarkups)
+      for Point in range(RightMarkups.GetNumberOfFiducials()):
+        if self.IsPointDuplicateFromDistance(RightMarkups, Point):
+          RightMarkups.SetNthFiducialSelected(Point,False)
+          RightMarkups.SetNthFiducialSelected(Point+1,False)
+          RightMarkups = self.GetMergeMarkupsUnselectedPointGroups(RightMarkups)
+      
+      # Recombine seperately tested left and right sides to return repaired landmarks
+      ConsolidatedMarkupsNode = self.RecombineLeftRightMarkups(LeftMarkups, RightMarkups)
+      pplWidget.SingleNodeSelector.setCurrentNode(None)
+      slicer.mrmlScene.RemoveNode(MarkupsNode)
+      
+      return ConsolidatedMarkupsNode
+   
+    def IsPointPairDuplicateFromDirection(self, MarkupsNode, Point1Index, Point2Index, DuplicateMisdirectionThreshold):
+      # Get coords from both candidates of duplicate pair - MarkupsNode[Index] and MarkupsNode[Index+1]
+      Candidate1Coords = MarkupsNode.GetMarkupPointVector(Point1Index, 0)
+      Candidate2Coords = MarkupsNode.GetMarkupPointVector(Point2Index, 0)
+
+      # Compute inter-candidate direction, to compare to reference direction
+      InterCandidateDirection = [Candidate1Coords[dim] - Candidate2Coords[dim] for dim in range(3)]
+      #AverageCandidateLocation = [(CurrentCoords[dim] + CandidateDuplicateCoords[dim])/2.0 for dim in range(3)]
+
+      # Get coords of points above and below candidate pair, or deal with boundary conditions, for reference direction
+
+      # Boundary condition when there is no point above candidate pair, use top point for reference
+      if Point1Index == 0:    
+        TopCoords = Candidate1Coords
+        PointBelowPairCoords = MarkupsNode.GetMarkupPointVector(Point2Index+1, 0)
+        ReferenceDirection = [TopCoords[dim] - PointBelowPairCoords[dim] for dim in range(3)]
+
+       # Boundary condition when there is no point below candidate pair
+      elif Point2Index == MarkupsNode.GetNumberOfFiducials()-1:
+        BottomCoords = Candidate2Coords
+        PointAbovePairCoords = MarkupsNode.GetMarkupPointVector(Point1Index-1, 0)
+        ReferenceDirection = [PointAbovePairCoords[dim] - BottomCoords[dim] for dim in range(3)]
+
+      # No boundary, can use point above and below candidate pair for reference direction
+      else:
+        PointAbovePairCoords = MarkupsNode.GetMarkupPointVector(Point1Index-1, 0)
+        PointBelowPairCoords = MarkupsNode.GetMarkupPointVector(Point2Index+1, 0)
+        ReferenceDirection = [PointAbovePairCoords[dim] - PointBelowPairCoords[dim] for dim in range(3)]
+
+      # Compute angle between InterCandidateDirection and ReferenceDirection as measure of deviation from axial symmetry
+      AngleRad = np.math.acos(np.dot(ReferenceDirection, InterCandidateDirection)/ (np.linalg.norm(ReferenceDirection)*np.linalg.norm(InterCandidateDirection)))
+      AngleDeg = AngleRad * 180.0 / np.pi
+
+      # If the angle between InterCandidateDirection and ReferenceDiretion is large, we have probably found a duplicate
+      print "Angle between " + MarkupsNode.GetNthFiducialLabel(Point1Index) + " and " + MarkupsNode.GetNthFiducialLabel(Point2Index) \
+        + " candidate pair and reference direction: " + str(AngleDeg)
+
+      if AngleDeg > DuplicateMisdirectionThreshold:
+        print " Duplicate detected!"
+        return True
+      else:
+        return False
+
+    def IsPointDuplicateFromDistance(self, MarkupsNode, Index):
+      # Compute inter-point distance statistics
+      RunningDistanceSum = 0.0
+      for pi in range(MarkupsNode.GetNumberOfFiducials()-1):
+        CurrentCoords = MarkupsNode.GetMarkupPointVector(pi,0)
+        NextCoords = MarkupsNode.GetMarkupPointVector(pi+1,0)
+        CurrentDistance = np.linalg.norm([NextCoords[dim] - CurrentCoords[dim] for dim in range(3)])
+        RunningDistanceSum += CurrentDistance
+      AvgDistance = RunningDistanceSum / float(MarkupsNode.GetNumberOfFiducials()-1)
+      
+      # Compare local inter-point distances of interest amongst selves and with stats
+      # Superior boundary condition at Index = 0 
+      Point1coords = MarkupsNode.GetMarkupPointVector(Index, 0)
+      if Index == 0:
+        Point2coords = MarkupsNode.GetMarkupPointVector(Index+1, 0)
+        InterCandidateVector = [Point2coords[dim] - Point1coords[dim] for dim in range(3)]
+        CandidateDistance = np.linalg.norm(InterCandidateVector)
+        
+        CandidateReplacementCoords = [(Point1coords[dim] + Point2coords[dim]) / 2.0 for dim in range(3)]
+        RefCoords1 = MarkupsNode.GetMarkupPointVector(Index+2, 0)
+        ReferenceVector1 = [CandidateReplacementCoords[dim] - RefCoords1[dim] for dim in range(3)]
+        ReferenceDistance = np.linalg.norm(ReferenceVector1)
+      
+      # Inferior boundary condition Index = MarkupsNode.GetNumberOfFiducials()-1
+      elif Index == MarkupsNode.GetNumberOfFiducials() - 1:
+        Point2coords = MarkupsNode.GetMarkupPointVector(Index-1, 0)
+        InterCandidateVector = [Point1coords[dim] - Point2coords[dim] for dim in range(3)]
+        CandidateDistance = np.linalg.norm(InterCandidateVector)
+        
+        CandidateReplacementCoords = [(Point1coords[dim] + Point2coords[dim]) / 2.0 for dim in range(3)]
+        RefCoords1 = MarkupsNode.GetMarkupPointVector(Index-2, 0)
+        ReferenceVector1 = [CandidateReplacementCoords[dim] - RefCoords1[dim] for dim in range(3)]
+        ReferenceDistance = np.linalg.norm(ReferenceVector1)
+        
+      # Not at boundary, can check on both side of pair
+      else:
+        Point2coords = MarkupsNode.GetMarkupPointVector(Index-1, 0)
+        Point3coords = MarkupsNode.GetMarkupPointVector(Index+1, 0)
+        InterCandidateVector1 = [Point1coords[dim] - Point2coords[dim] for dim in range(3)]
+        InterCandidateVector2 = [Point1coords[dim] - Point3coords[dim] for dim in range(3)]
+        CandidateDistance1 = np.linalg.norm(InterCandidateVector1)
+        CandidateDistance2 = np.linalg.norm(InterCandidateVector2)
+        CandidateDistance = min(CandidateDistance1, CandidateDistance2)
+        
+        CandidateReplacementCoords1 = [(Point1coords[dim] + Point2coords[dim]) / 2.0 for dim in range(3)]
+        RefCoords1 = MarkupsNode.GetMarkupPointVector(Index+1, 0)
+        ReferenceVector1 = [CandidateReplacementCoords1[dim] - RefCoords1[dim] for dim in range(3)]
+        ReferenceDistance1 = np.linalg.norm(ReferenceVector1)
+        
+        CandidateReplacementCoords2 = [(Point1coords[dim] + Point3coords[dim]) / 2.0 for dim in range(3)]
+        RefCoords2 = MarkupsNode.GetMarkupPointVector(Index-1, 0)
+        ReferenceVector2 = [CandidateReplacementCoords2[dim] - RefCoords2[dim] for dim in range(3)]
+        ReferenceDistance2 = np.linalg.norm(ReferenceVector2)
+        
+        ReferenceDistance = max(ReferenceDistance1, ReferenceDistance2)
+        
+      if (CandidateDistance < 0.33 * AvgDistance or CandidateDistance < 0.33 * ReferenceDistance):
+        return True
+      else:
+        return False
+      
+    def GetMergeMarkupsUnselectedPointGroups(self, MarkupsNode):
+      # Produce new markups node with selected point groups merged
+      NewMarkupsNode = slicer.vtkMRMLMarkupsFiducialNode()
+      NewMarkupsNode.SetName(MarkupsNode.GetName())
+      for pi in range(MarkupsNode.GetNumberOfFiducials()):
+        if not MarkupsNode.GetNthFiducialSelected(pi):
+          if pi == MarkupsNode.GetNumberOfFiducials()-1 or MarkupsNode.GetNthFiducialSelected(pi+1):  # A lone, unselected point should not be merged
+            MarkupsNode.SetNthFiducialSelected(pi+1, True)
+          else:
+            OldCoords1 = MarkupsNode.GetMarkupPointVector(pi, 0)
+            OldCoords2 = MarkupsNode.GetMarkupPointVector(pi+1, 0)
+            MergedCoords = [(OldCoords1[dim] + OldCoords2[dim])/2.0 for dim in range(3)]
+            NewMarkupsNode.AddFiducialFromArray(MergedCoords)
+        else:
+          NewPointCoords = MarkupsNode.GetMarkupPointVector(pi, 0)
+          NewPointName = MarkupsNode.GetNthFiducialLabel(pi)
+          NewMarkupsNode.AddFiducialFromArray(NewPointCoords)
+          NewMarkupsNode.SetNthFiducialLabel(pi, NewPointName)
+          # THEN the next point (pi+1) should be un-selected as well      
+        
+      return NewMarkupsNode
+      
     def TrimSidesToCorrespondence(self):
       # Tests for the best arrangment of points present in terms of minimizing inter-vertebral angle sums to determine which end-points to trim
       
@@ -1615,6 +1792,24 @@ class RepairLandmarksLogic(ScriptedLoadableModuleLogic):
         
       return self.MarkupsNode
       
+    def RecombineLeftRightMarkups(self, LeftNode, RightNode):
+      # Simply adds left then right points to new node, 
+      LeftCoords = [LeftNode.GetMarkupPointVector(i,0) for i in range(LeftNode.GetNumberOfFiducials())]
+      LeftNames = [LeftNode.GetNthFiducialLabel(i) for i in range(LeftNode.GetNumberOfFiducials())]
+      RightCoords = [RightNode.GetMarkupPointVector(i,0) for i in range(RightNode.GetNumberOfFiducials())]
+      RightNames = [RightNode.GetNthFiducialLabel(i) for i in range(RightNode.GetNumberOfFiducials())]
+      
+      RecombinedMarkupsNode = slicer.vtkMRMLMarkupsFiducialNode()
+      for i, lc in enumerate(LeftCoords):
+        RecombinedMarkupsNode.AddFiducialFromArray(lc)
+        RecombinedMarkupsNode.SetNthFiducialLabel(i, LeftNames[i])
+      
+      for i, rc in enumerate(RightCoords):
+        RecombinedMarkupsNode.AddFiducialFromArray(rc)
+        RecombinedMarkupsNode.SetNthFiducialLabel(i, RightNames[i])
+      
+      return RecombinedMarkupsNode
+      
     def HomogenizeVertebralInterlandmarkWidth(self, HomogenizationFactor):
       # Operates on self.LeftS.MarkupsNode and self.RightSide.MarkupsNode
       # Therefore assumes that they have the same number of points
@@ -1654,7 +1849,7 @@ class RepairLandmarksLogic(ScriptedLoadableModuleLogic):
       return True
   
   class SpineSide:
-    def __init__(self, parent, Node, PolyFitDegree, BoundaryMultiplicity, OmissionDetectionSpecificity, ImputationSpecificity):
+    def __init__(self, parent, Node, PolyFitDegree, OmissionDetectionSpecificity, ImputationSpecificity):
       self.ParentPatient = parent
       self.PointsPerPolynomialCurve = 500
       
@@ -1672,40 +1867,11 @@ class RepairLandmarksLogic(ScriptedLoadableModuleLogic):
       self.SubPatchesPointCounts = []      # Values denote number of omissions of self.MarkupsNode's intervals, to be stored in self.PatchNode
       
       self.PolyFitDegree = PolyFitDegree
-      self.BoundaryMultiplicity = BoundaryMultiplicity
       self.OmissionDetectionSpecificity = OmissionDetectionSpecificity
-      
-      self.WeightedBoundaryNode = self.GetWeightedBoundaryNode(self.MarkupsNode, BoundaryMultiplicity)
       
       self.ImputationSpecificity = ImputationSpecificity
       self.OutlierIdentificationVotes = np.zeros(self.MarkupsNode.GetNumberOfFiducials())
       #self.ImputationErrorImprovementThreshold = 0.05
-     
-    def GetWeightedBoundaryNode(self, Node, Multiplicity):
-      WeightedBoundaryNode = slicer.vtkMRMLMarkupsFiducialNode()
-      Multiplicity = int(Multiplicity)
-      
-      # Add upper boundary point, multiple times, with noise for non-coincidence
-      UpperBoundaryPoint = Node.GetMarkupPointVector(0,0)
-      for i in range(Multiplicity-1):
-        RandomNoise = np.random.uniform(-1,1,3)
-        NoisifiedBoundaryPoint = [UpperBoundaryPoint[dim] + RandomNoise[dim] for dim in range(3)]
-        WeightedBoundaryNode.AddFiducialFromArray(NoisifiedBoundaryPoint)
-      
-      # Add non-boundary points normally throughout
-      for i in range(0, Node.GetNumberOfFiducials()):
-        Point = Node.GetMarkupPointVector(i,0)
-        WeightedBoundaryNode.AddFiducialFromArray(Point)
-      
-      # Add upper boundary point, multiple times, with noise for non-coincidence
-      LowerBoundaryPoint = Node.GetMarkupPointVector(Node.GetNumberOfFiducials()-1,0)
-      for i in range(Multiplicity-1):
-        RandomNoise = np.random.uniform(-1,1,3)
-        NoisifiedBoundaryPoint = [LowerBoundaryPoint[dim] + RandomNoise[dim] for dim in range(3)]
-        WeightedBoundaryNode.AddFiducialFromArray(NoisifiedBoundaryPoint)
-        
-      self.OrderPointsSuperiorToInferior(WeightedBoundaryNode)
-      return WeightedBoundaryNode
      
     def OrderPointsSuperiorToInferior(self, Node):
       #print  "Sorting node " + Node.GetName() + " landmarks"
@@ -2300,27 +2466,24 @@ class RepairLandmarksLogic(ScriptedLoadableModuleLogic):
         else:
           CurrentPointIndex += 1
   
-  def __init__(self, Markups, kmWindowSize, PolyFitDegree, BoundaryMultiplicity, OmissionIdentificationSpecificity, ImputationSpecificity):
-    self.PatientModel = self.PatientTransverseProcesses(self, Markups, kmWindowSize, PolyFitDegree, BoundaryMultiplicity, OmissionIdentificationSpecificity, ImputationSpecificity)
+  def __init__(self, Markups, kmWindowSize, PolyFitDegree, OmissionIdentificationSpecificity, ImputationSpecificity):
+    self.PatientModel = self.PatientTransverseProcesses(self, Markups, kmWindowSize, PolyFitDegree, OmissionIdentificationSpecificity, ImputationSpecificity)
    
-  def UpdateParameters(self, kmWindowSize, PolyFitDegree, BoundaryMultiplicity, OmissionIdentificationSpecificity, ImputationSpecificity):
+  def UpdateParameters(self, kmWindowSize, PolyFitDegree, OmissionIdentificationSpecificity, ImputationSpecificity):
     self.PatientModel.kmWindowSize = int(kmWindowSize)
     self.PatientModel.PolyFitDegree = int(PolyFitDegree)
-    self.PatientModel.BoundaryMultiplicity = int(BoundaryMultiplicity)
     self.PatientModel.OmissionIdentificationSpecificity = OmissionIdentificationSpecificity
     self.PatientModel.ImputationSpecificity = ImputationSpecificity
     
     LS = self.PatientModel.LeftSide
     if LS != None:
       LS.PolyFitDegree = int(PolyFitDegree)
-      LS.BoundaryMultiplicity = int(BoundaryMultiplicity)
       LS.OmissionIdentificationSpecificity = OmissionIdentificationSpecificity
       LS.ImputationSpecificity = ImputationSpecificity
       
     RS = self.PatientModel.RightSide
     if RS != None:
       RS.PolyFitDegree = int(PolyFitDegree)
-      RS.BoundaryMultiplicity = int(BoundaryMultiplicity)
       RS.OmissionIdentificationSpecificity = OmissionIdentificationSpecificity
       RS.ImputationSpecificity = ImputationSpecificity
    
