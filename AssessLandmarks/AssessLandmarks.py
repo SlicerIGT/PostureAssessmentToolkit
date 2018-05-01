@@ -153,19 +153,20 @@ class AssessLandmarksWidget(ScriptedLoadableModuleWidget):
     self.DataFormLayout.addWidget(qt.QLabel("Incomplete spine model: "), 1, 0, 1, 1)
     self.DataFormLayout.addWidget(self.IncompleteSpineModelSelector, 1, 1, 1, 3)
     
-    self.IncompleteHealthyLandmaksSelector = slicer.qMRMLNodeComboBox()
-    self.IncompleteHealthyLandmaksSelector.nodeTypes = ["vtkMRMLMarkupsFiducialNode",]
-    self.IncompleteHealthyLandmaksSelector.setMRMLScene( slicer.mrmlScene )
-    self.IncompleteHealthyLandmaksSelector.selectNodeUponCreation = False
-    self.IncompleteHealthyLandmaksSelector.addEnabled = False
-    self.IncompleteHealthyLandmaksSelector.removeEnabled = False
-    self.IncompleteHealthyLandmaksSelector.noneEnabled = True
-    self.IncompleteHealthyLandmaksSelector.showHidden = False
-    self.IncompleteHealthyLandmaksSelector.showChildNodeTypes = False
-    self.IncompleteHealthyLandmaksSelector.enabled = False
-    self.IncompleteHealthyLandmaksSelector.setToolTip( "Select the markups node containing TrP landmarks along incomplete healthy model." )
+    # Corresponding landmarks
+    self.IncompleteHealthyLandmarksSelector = slicer.qMRMLNodeComboBox()
+    self.IncompleteHealthyLandmarksSelector.nodeTypes = ["vtkMRMLMarkupsFiducialNode",]
+    self.IncompleteHealthyLandmarksSelector.setMRMLScene( slicer.mrmlScene )
+    self.IncompleteHealthyLandmarksSelector.selectNodeUponCreation = False
+    self.IncompleteHealthyLandmarksSelector.addEnabled = False
+    self.IncompleteHealthyLandmarksSelector.removeEnabled = False
+    self.IncompleteHealthyLandmarksSelector.noneEnabled = True
+    self.IncompleteHealthyLandmarksSelector.showHidden = False
+    self.IncompleteHealthyLandmarksSelector.showChildNodeTypes = False
+    self.IncompleteHealthyLandmarksSelector.enabled = False
+    self.IncompleteHealthyLandmarksSelector.setToolTip( "Select the markups node containing TrP landmarks along incomplete healthy model." )
     self.DataFormLayout.addWidget(qt.QLabel("Healthy markups node: "), 2, 0, 1, 1)
-    self.DataFormLayout.addWidget(self.IncompleteHealthyLandmaksSelector, 2, 1, 1, 3)
+    self.DataFormLayout.addWidget(self.IncompleteHealthyLandmarksSelector, 2, 1, 1, 3)
     
     # input volume selector
     self.MarkupsNodeSelector = slicer.qMRMLNodeComboBox()
@@ -383,9 +384,7 @@ class AssessLandmarksWidget(ScriptedLoadableModuleWidget):
       self.logic.GenerateVisualization(self.ScaleSkewSlider.value)
   """
   
-  #def OnAssessmentConfigChanged(self):
-    
-  
+
   def OnVisualizeTranslationalDeformationButtonClicked(self):
     CurrentMakupsNode = self.MarkupsNodeSelector.currentNode()
     if CurrentMakupsNode == None or slicer.util.getNode(CurrentMakupsNode.GetName()+"_Visualization") == None:
@@ -716,6 +715,7 @@ class AssessLandmarksLogic(ScriptedLoadableModuleLogic):
     self.VisualizationSurfaceModel.SetAndObservePolyData(PolyData)
     self.VisualizationSurfaceModel.SetName(self.PatientMarkupsNode.GetName() + "_Visualization")
     
+    # Get natural transverse process landmarks, before we can add anchor points
     PatientLabelsCoords = [[self.PatientMarkupsNode.GetNthFiducialLabel(i), self.PatientMarkupsNode.GetMarkupPointVector(i,0)] for i in range(self.PatientMarkupsNode.GetNumberOfFiducials())]
     ModelLabelsCoords = [[self.ModelMarkupsNode.GetNthFiducialLabel(i), self.ModelMarkupsNode.GetMarkupPointVector(i,0)] for i in range(self.ModelMarkupsNode.GetNumberOfFiducials())]
     
@@ -746,7 +746,7 @@ class AssessLandmarksLogic(ScriptedLoadableModuleLogic):
       PatientRegistrationMarkupsNode.AddFiducialFromArray(Coords)
       PatientRegistrationMarkupsNode.SetNthFiducialLabel(i, Label)
 
-    # DEBUG
+    # DEBUG - uncomment to have actual registration points added to scene
     #slicer.mrmlScene.AddNode(PatientRegistrationMarkupsNode)
     #slicer.mrmlScene.AddNode(ModelRegistrationMarkupsNode)
       
@@ -767,7 +767,6 @@ class AssessLandmarksLogic(ScriptedLoadableModuleLogic):
     ModelVtkPoints = vtk.vtkPoints()
     ModelVtkPoints.SetData(ModelVtkCoords)
 
-    
     PatientVtkCoords = vtk.vtkFloatArray()
     PatientVtkCoords.SetNumberOfComponents(3)
     PatientVtkCoords.SetNumberOfTuples(len(PatientLabelsCoords))
@@ -794,11 +793,13 @@ class AssessLandmarksLogic(ScriptedLoadableModuleLogic):
     
   def GetAnchorOffsetVector(self, MarkupsNode, PointIndex):
     # This is becoming disorganized - TODO: COme up with systematic way for applying geometry corrections
-    #LabelsCoords = [(MarkupsNode.GetNthFiducialLabel(i), MarkupsNode.GetMarkupPointVector(i,0)) for i in range(MarkupsNode.GetNumberOfFiducials())]
+    
+    # Compute lateral vector between landmarks of a given vertebra
     LateralVector = self.GetLateralVector(MarkupsNode, PointIndex)
     LateralVectorNorm = np.linalg.norm(LateralVector)
     LateralUnitVector = [(LateralVector[dim]/LateralVectorNorm) for dim in range(3)]
     
+    # Compute axial vector between landmarks of sequential vertebrae
     AxialVector = self.GetAxialVector(MarkupsNode, PointIndex)
     AxialVectorNorm = np.linalg.norm(AxialVector)
     AxialUnitVector = [(AxialVector[dim]/AxialVectorNorm) for dim in range(3)]
@@ -810,6 +811,7 @@ class AssessLandmarksLogic(ScriptedLoadableModuleLogic):
 
     InflationCorrectionVector = [(LateralVector[dim] * (InflationCorrectionFactor)) for dim in range(3)]
     
+    # Compute anterior offset vector as cross-product of lateral and axial vectors
     UnscaledAnteriorVector = np.cross(LateralUnitVector, AxialUnitVector)
     # Reflect UnscaledAnteriorVector if it points into posterior direction
     if UnscaledAnteriorVector[1] < 0:
@@ -847,6 +849,7 @@ class AssessLandmarksLogic(ScriptedLoadableModuleLogic):
     (CurentLabel, CurrentCoords) = (MarkupsNode.GetNthFiducialLabel(PointIndex), MarkupsNode.GetMarkupPointVector(PointIndex,0))
     ExpectedOrderIndex = ExpectedVertebraLabelsInOrder.index(CurentLabel[:-1])
 
+    # If we are at the top left of top right point, must address boundary condition accordingly
     if PointIndex < 2:# or (MarkupsNode.GetNthFiducialLabel(PointIndex-2)[:-1] == ExpectedVertebraLabelsInOrder[ExpectedOrderIndex-1] and Node.GetNthFiducialLabel(PointIndex-2)[-1] == CurentLabel[-1]):
       # Axial neighbor must be below current point 
       if CurentLabel[-1] == "L":
@@ -864,6 +867,7 @@ class AssessLandmarksLogic(ScriptedLoadableModuleLogic):
       AxialVector = [(LeftAxialVector[dim] + RightAxialVector[dim])/2.0 for dim in range(3)]
       return AxialVector
     
+    # Bottom left or bottom right boundaries must be handled
     if PointIndex > MarkupsNode.GetNumberOfFiducials() - 3:# (MarkupsNode.GetNthFiducialLabel(PointIndex+2)[:-1] == ExpectedVertebraLabelsInOrder[ExpectedOrderIndex+1] and Node.GetNthFiducialLabel(PointIndex+2)[-1] == CurentLabel[-1]):
       # Axial neighbor must be above current point in markups list
       if CurentLabel[-1] == "L":
@@ -930,6 +934,8 @@ class AssessLandmarksLogic(ScriptedLoadableModuleLogic):
     return InflationFactor
     
   def RotateAnchorPointAboutAxisThroughOriginal(self, MarkupsNode, PointIndex, Angle):
+    # Rotates anchor point about axes through corresponding natural landmark in direction of axial vector
+    # Originally used to improve width of visualizations' vertebral bodies, limited success
     if MarkupsNode.GetNthFiducialLabel(PointIndex)[-1] == "L":
       Angle *= -1
   
@@ -937,11 +943,13 @@ class AssessLandmarksLogic(ScriptedLoadableModuleLogic):
     CorrespondingAnchorCoords = MarkupsNode.GetMarkupPointVector(PointIndex+34, 0)
     OriginalToAnchorCoords = [(CorrespondingAnchorCoords[dim] - OriginalCoords[dim]) for dim in range(3)]
     
+    # Rotation axis is in direction of axial vector
     Axis = self.GetAxialVector(MarkupsNode, PointIndex)
     AxisNorm = np.linalg.norm(Axis)
     UnitAxis = [(Axis[dim])/AxisNorm for dim in range(3)]
     RotMat = self.GetVtkRotationMatrixAboutAxis(Angle, UnitAxis)
     
+    # Rotate from original anchor point location
     RotatedAnchorCoords = OriginalCoords
     for row in range(3):
       #RotatedAnchorCoords[row] = OriginalCoords[dim]
